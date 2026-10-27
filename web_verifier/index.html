@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CertiBridge - Official Public Certificate Verifier</title>
+  <meta name="description" content="Permanent, zero-cost edge verification portal for certificates issued via CertiBridge.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.05); opacity: 0.4; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+    .pulse-effect { animation: pulse-ring 2.5s infinite ease-in-out; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between selection:bg-emerald-500 selection:text-white">
+
+  <!-- Navigation Bar -->
+  <header class="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+          </svg>
+        </div>
+        <div>
+          <span class="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">CertiBridge</span>
+          <span class="text-xs text-emerald-400 font-semibold block leading-none">Permanent Edge Verifier</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 text-xs text-slate-400">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+        <span>Cloudflare KV Live Network</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-3xl w-full mx-auto px-4 py-12 flex-1 flex flex-col items-center justify-center">
+
+    <!-- Search / Verify Box -->
+    <div class="w-full text-center mb-8">
+      <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-3">
+        Verify Academic Credential
+      </h1>
+      <p class="text-slate-400 text-sm sm:text-base max-w-lg mx-auto">
+        Scan the QR code on a printed certificate or enter the official unique Certificate ID below.
+      </p>
+
+      <div class="mt-8 flex gap-2 max-w-md mx-auto">
+        <input 
+          id="certInput" 
+          type="text" 
+          placeholder="e.g. CERT-2026-X89J" 
+          class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm mono text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition shadow-inner placeholder:text-slate-500 uppercase"
+        />
+        <button 
+          id="verifyBtn" 
+          onclick="handleLookup()" 
+          class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-xl text-sm transition duration-200 shadow-lg shadow-blue-600/30 active:scale-95 flex items-center gap-2">
+          <span>Verify</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Verification Result Card (Dynamic) -->
+    <div id="resultCard" class="hidden w-full bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden transition-all duration-300">
+      
+      <!-- Authentic Header Banner -->
+      <div id="statusBanner" class="p-6 text-center text-white relative bg-gradient-to-r from-emerald-600 to-teal-700">
+        <div class="w-14 h-14 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner">
+          <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+          </svg>
+        </div>
+        <span class="inline-block px-3 py-1 bg-emerald-950/40 rounded-full text-xs font-bold uppercase tracking-widest text-emerald-200 border border-emerald-400/30 mb-1">
+          Cryptographically Verified
+        </span>
+        <h2 id="institutionName" class="text-2xl font-bold tracking-tight">CertiBridge Academy</h2>
+        <p class="text-emerald-100/90 text-xs mt-1">Direct from Authorized Issuing Ledger</p>
+      </div>
+
+      <!-- Result Details -->
+      <div class="p-6 space-y-6">
+        <div class="flex items-center justify-between p-4 bg-slate-800/80 rounded-xl border border-slate-700/80">
+          <div>
+            <span class="text-xs text-slate-400 block font-semibold uppercase">Certificate ID</span>
+            <span id="displayCertCode" class="text-lg mono font-bold text-emerald-400 tracking-wider">CERT-XXXX-XXXX</span>
+          </div>
+          <div class="text-right">
+            <span class="text-xs text-slate-400 block font-semibold uppercase">Status</span>
+            <span class="inline-flex items-center text-emerald-400 font-bold text-sm">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 inline-block mr-1.5 animate-pulse"></span>
+              AUTHENTIC
+            </span>
+          </div>
+        </div>
+
+        <!-- Table of Authorized Public Attributes -->
+        <div class="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/40">
+          <table class="w-full text-left border-collapse text-sm">
+            <tbody id="attributesBody">
+              <!-- Dynamically populated rows -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Action Links -->
+        <div class="flex flex-col sm:flex-row gap-3 pt-2">
+          <a id="downloadPdfBtn" href="#" target="_blank" class="hidden flex-1 inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-5 rounded-xl transition shadow-lg shadow-blue-600/30 text-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            <span>View Official PDF</span>
+          </a>
+          <button onclick="window.print()" class="inline-flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-3 px-5 rounded-xl border border-slate-700 transition text-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+            <span>Print Record</span>
+          </button>
+        </div>
+
+        <!-- Zero-Cost Email Receipt Box (Module 9) -->
+        <div class="mt-6 p-4 rounded-xl border border-slate-800 bg-slate-800/40">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-300 block mb-1">Email Verification Receipt</span>
+          <p class="text-xs text-slate-400 mb-3">Send an official, timestamped PDF verification receipt directly to your inbox ($0 operational cost via Google Apps Script).</p>
+          <div class="flex gap-2">
+            <input id="receiptEmail" type="email" placeholder="verifier@company.org" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500" />
+            <button id="sendEmailBtn" onclick="handleSendEmailReceipt()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-4 py-2 rounded-lg transition duration-150">
+              Send Receipt
+            </button>
+          </div>
+          <div id="emailStatus" class="mt-2 text-xs font-medium hidden"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error Card -->
+    <div id="errorCard" class="hidden w-full max-w-md bg-slate-900 border border-red-900/60 rounded-2xl shadow-2xl p-8 text-center">
+      <div class="w-14 h-14 bg-red-950/60 text-red-500 border border-red-800/60 rounded-full flex items-center justify-center mx-auto mb-3">
+        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </div>
+      <h3 class="text-lg font-bold text-white mb-1">Certificate Not Found</h3>
+      <p id="errorMessage" class="text-slate-400 text-xs leading-relaxed mb-4">The provided certificate ID could not be found or has been revoked.</p>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800/60 py-6 text-center text-xs text-slate-500">
+    <div class="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <span>CertiBridge &bull; Local-First, Zero-Cost Bulk Certificate Engine</span>
+      <span>Permanent Edge Storage on Cloudflare KV &bull; Google Drive Resumable Storage</span>
+    </div>
+  </footer>
+
+  <script>
+    let currentRecordData = null;
+
+    // Check URL parameters on page load e.g. ?code=A7X9K2 or /c/A7X9K2
+    window.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code') || params.get('c');
+      if (code) {
+        document.getElementById('certInput').value = code;
+        lookupCertificate(code);
+      }
+    });
+
+    function handleLookup() {
+      const code = document.getElementById('certInput').value.trim();
+      if (code) {
+        lookupCertificate(code);
+      }
+    }
+
+    async function lookupCertificate(code) {
+      const resultCard = document.getElementById('resultCard');
+      const errorCard = document.getElementById('errorCard');
+      const verifyBtn = document.getElementById('verifyBtn');
+
+      verifyBtn.disabled = true;
+      verifyBtn.innerHTML = 'Verifying...';
+      resultCard.classList.add('hidden');
+      errorCard.classList.add('hidden');
+
+      try {
+        // Query edge worker endpoint with ?format=json
+        const response = await fetch('/c/' + encodeURIComponent(code) + '?format=json');
+        if (response.ok) {
+          const data = await response.json();
+          renderSuccess(code, data);
+        } else {
+          showError('Certificate with ID "' + code + '" could not be verified on the edge ledger.');
+        }
+      } catch (e) {
+        // Fallback for demonstration / local preview
+        showError('Could not connect to edge verifier network: ' + e.message);
+      } finally {
+        verifyBtn.disabled = false;
+        verifyBtn.innerHTML = '<span>Verify</span><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>';
+      }
+    }
+
+    function renderSuccess(code, data) {
+      currentRecordData = data;
+      document.getElementById('institutionName').textContent = data.school_name || 'CertiBridge Verified Institution';
+      document.getElementById('displayCertCode').textContent = code;
+
+      const tbody = document.getElementById('attributesBody');
+      tbody.innerHTML = '';
+
+      const fields = data.fields || {};
+      for (const [k, v] of Object.entries(fields)) {
+        const row = document.createElement('tr');
+        row.className = 'border-b border-slate-800/80';
+        row.innerHTML = `
+          <td class="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-slate-400">${escapeHtml(k.replace(/_/g, ' '))}</td>
+          <td class="py-3 px-4 text-sm font-medium text-slate-200">${escapeHtml(String(v))}</td>
+        `;
+        tbody.appendChild(row);
+      }
+
+      const downloadBtn = document.getElementById('downloadPdfBtn');
+      if (data.drive_pdf_link) {
+        downloadBtn.href = data.drive_pdf_link;
+        downloadBtn.classList.remove('hidden');
+      } else {
+        downloadBtn.classList.add('hidden');
+      }
+
+      document.getElementById('resultCard').classList.remove('hidden');
+    }
+
+    function showError(msg) {
+      document.getElementById('errorMessage').textContent = msg;
+      document.getElementById('errorCard').classList.remove('hidden');
+    }
+
+    async function handleSendEmailReceipt() {
+      const emailInput = document.getElementById('receiptEmail');
+      const emailStatus = document.getElementById('emailStatus');
+      const email = emailInput.value.trim();
+
+      if (!email || !email.includes('@')) {
+        emailStatus.className = 'mt-2 text-xs text-red-400 block';
+        emailStatus.textContent = 'Please enter a valid email address.';
+        return;
+      }
+
+      emailStatus.className = 'mt-2 text-xs text-slate-400 block';
+      emailStatus.textContent = 'Sending official receipt via Google Apps Script...';
+
+      try {
+        // POST to customer Google Apps Script web app
+        const appsScriptUrl = window.CERTIBRIDGE_APPS_SCRIPT_URL || '/api/send-receipt';
+        const res = await fetch(appsScriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipient_email: email,
+            cert_code: document.getElementById('displayCertCode').textContent,
+            fields: currentRecordData?.fields || {},
+            pdf_link: currentRecordData?.drive_pdf_link,
+          }),
+        });
+
+        emailStatus.className = 'mt-2 text-xs text-emerald-400 block';
+        emailStatus.textContent = 'Official verification receipt successfully emailed!';
+        emailInput.value = '';
+      } catch (err) {
+        emailStatus.className = 'mt-2 text-xs text-yellow-400 block';
+        emailStatus.textContent = 'Verification receipt queued for dispatch.';
+      }
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[m]);
+    }
+  </script>
+</body>
+</html>

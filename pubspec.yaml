@@ -1,0 +1,62 @@
+name: certibridge
+description: "Local-First, Zero-Cost Bulk Certificate Engine, Portable Project Bundles & Permanent Edge Verifier"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Archive Engine (.cbproj bundles)
+  archive: ^3.4.10
+
+  # Local Persistence & Checkpointing
+  sqflite: ^2.3.2
+  sqflite_common_ffi: ^2.3.2
+  path: ^1.9.0
+  path_provider: ^2.1.2
+
+  # Spreadsheet Parsing & Write-Back
+  excel: ^4.0.3
+  csv: ^6.0.0
+
+  # Template Engine & PDF Compilation
+  pdf: ^3.10.8
+  pdfx: ^2.6.0
+  printing: ^5.12.0
+
+  # Image Processing
+  image: ^4.1.7
+
+  # QR Code Engine
+  qr: ^3.0.1
+  qr_flutter: ^4.1.0
+
+  # Security & Storage
+  flutter_secure_storage: ^9.0.0
+  crypto: ^3.0.3
+
+  # Network & Utilities
+  http: ^1.2.0
+  uuid: ^4.3.3
+  url_launcher: ^6.2.5
+  file_picker: ^8.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/fonts/
+    - assets/fonts/English/
+    - assets/fonts/Myanmar_Unicode/
+    - assets/fonts/Myanmar_WinFonts/
+    - assets/templates/
