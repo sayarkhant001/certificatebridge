@@ -1,52 +1,71 @@
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SecureStorageService {
-  static const FlutterSecureStorage _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(
-      encryptedSharedPreferences: true,
-    ),
-    mOptions: MacOsOptions(),
-    wOptions: WindowsOptions(
-      useBackwardCompatibility: false,
-    ),
-  );
+  static const String _keyGoogleAccessToken = 'sec_google_access_token';
+  static const String _keyGoogleRefreshToken = 'sec_google_refresh_token';
+  static const String _keyGoogleTokenExpiry = 'sec_google_token_expiry';
+  static const String _keyCloudflareAccountId = 'sec_cloudflare_account_id';
+  static const String _keyCloudflareApiToken = 'sec_cloudflare_api_token';
+  static const String _keyCloudflareKvId = 'sec_cloudflare_kv_id';
+  static const String _keyCloudflareWorkerUrl = 'sec_cloudflare_worker_url';
+  static const String _keyAppsScriptUrl = 'sec_apps_script_url';
 
-  static const String _keyGoogleAccessToken = 'google_access_token';
-  static const String _keyGoogleRefreshToken = 'google_refresh_token';
-  static const String _keyGoogleTokenExpiry = 'google_token_expiry';
-  static const String _keyCloudflareAccountId = 'cloudflare_account_id';
-  static const String _keyCloudflareApiToken = 'cloudflare_api_token';
-  static const String _keyCloudflareKvId = 'cloudflare_kv_id';
-  static const String _keyCloudflareWorkerUrl = 'cloudflare_worker_url';
-  static const String _keyAppsScriptUrl = 'apps_script_url';
+  Future<SharedPreferences> get _prefs async => await SharedPreferences.getInstance();
+
+  String _encrypt(String value) {
+    final bytes = utf8.encode(value);
+    // Simple reversible XOR obfuscation with app seed
+    final obfuscated = bytes.map((b) => b ^ 0x5A).toList();
+    return base64Encode(obfuscated);
+  }
+
+  String _decrypt(String encoded) {
+    try {
+      final bytes = base64Decode(encoded);
+      final deobfuscated = bytes.map((b) => b ^ 0x5A).toList();
+      return utf8.decode(deobfuscated);
+    } catch (_) {
+      return encoded;
+    }
+  }
 
   Future<void> saveGoogleTokens({
     required String accessToken,
     String? refreshToken,
     int? expiresInSeconds,
   }) async {
-    await _storage.write(key: _keyGoogleAccessToken, value: accessToken);
+    final prefs = await _prefs;
+    await prefs.setString(_keyGoogleAccessToken, _encrypt(accessToken));
     if (refreshToken != null && refreshToken.isNotEmpty) {
-      await _storage.write(key: _keyGoogleRefreshToken, value: refreshToken);
+      await prefs.setString(_keyGoogleRefreshToken, _encrypt(refreshToken));
     }
     if (expiresInSeconds != null) {
       final expiryTime =
           DateTime.now().add(Duration(seconds: expiresInSeconds)).toIso8601String();
-      await _storage.write(key: _keyGoogleTokenExpiry, value: expiryTime);
+      await prefs.setString(_keyGoogleTokenExpiry, _encrypt(expiryTime));
     }
   }
 
   Future<String?> getGoogleAccessToken() async {
-    return await _storage.read(key: _keyGoogleAccessToken);
+    final prefs = await _prefs;
+    final val = prefs.getString(_keyGoogleAccessToken);
+    if (val == null) return null;
+    return _decrypt(val);
   }
 
   Future<String?> getGoogleRefreshToken() async {
-    return await _storage.read(key: _keyGoogleRefreshToken);
+    final prefs = await _prefs;
+    final val = prefs.getString(_keyGoogleRefreshToken);
+    if (val == null) return null;
+    return _decrypt(val);
   }
 
   Future<bool> isGoogleTokenExpired() async {
-    final expiryStr = await _storage.read(key: _keyGoogleTokenExpiry);
-    if (expiryStr == null) return true;
+    final prefs = await _prefs;
+    final val = prefs.getString(_keyGoogleTokenExpiry);
+    if (val == null) return true;
+    final expiryStr = _decrypt(val);
     final expiry = DateTime.tryParse(expiryStr);
     if (expiry == null) return true;
     return DateTime.now().isAfter(expiry.subtract(const Duration(minutes: 2)));
@@ -58,38 +77,53 @@ class SecureStorageService {
     String? kvNamespaceId,
     String? workerUrl,
   }) async {
-    await _storage.write(key: _keyCloudflareAccountId, value: accountId);
-    await _storage.write(key: _keyCloudflareApiToken, value: apiToken);
+    final prefs = await _prefs;
+    await prefs.setString(_keyCloudflareAccountId, _encrypt(accountId));
+    await prefs.setString(_keyCloudflareApiToken, _encrypt(apiToken));
     if (kvNamespaceId != null) {
-      await _storage.write(key: _keyCloudflareKvId, value: kvNamespaceId);
+      await prefs.setString(_keyCloudflareKvId, _encrypt(kvNamespaceId));
     }
     if (workerUrl != null) {
-      await _storage.write(key: _keyCloudflareWorkerUrl, value: workerUrl);
+      await prefs.setString(_keyCloudflareWorkerUrl, _encrypt(workerUrl));
     }
   }
 
   Future<Map<String, String?>> getCloudflareCredentials() async {
-    final accountId = await _storage.read(key: _keyCloudflareAccountId);
-    final apiToken = await _storage.read(key: _keyCloudflareApiToken);
-    final kvId = await _storage.read(key: _keyCloudflareKvId);
-    final workerUrl = await _storage.read(key: _keyCloudflareWorkerUrl);
+    final prefs = await _prefs;
+    final accountIdRaw = prefs.getString(_keyCloudflareAccountId);
+    final apiTokenRaw = prefs.getString(_keyCloudflareApiToken);
+    final kvIdRaw = prefs.getString(_keyCloudflareKvId);
+    final workerUrlRaw = prefs.getString(_keyCloudflareWorkerUrl);
+
     return {
-      'accountId': accountId,
-      'apiToken': apiToken,
-      'kvNamespaceId': kvId,
-      'workerUrl': workerUrl,
+      'accountId': accountIdRaw != null ? _decrypt(accountIdRaw) : null,
+      'apiToken': apiTokenRaw != null ? _decrypt(apiTokenRaw) : null,
+      'kvNamespaceId': kvIdRaw != null ? _decrypt(kvIdRaw) : null,
+      'workerUrl': workerUrlRaw != null ? _decrypt(workerUrlRaw) : null,
     };
   }
 
   Future<void> saveAppsScriptUrl(String url) async {
-    await _storage.write(key: _keyAppsScriptUrl, value: url);
+    final prefs = await _prefs;
+    await prefs.setString(_keyAppsScriptUrl, _encrypt(url));
   }
 
   Future<String?> getAppsScriptUrl() async {
-    return await _storage.read(key: _keyAppsScriptUrl);
+    final prefs = await _prefs;
+    final val = prefs.getString(_keyAppsScriptUrl);
+    if (val == null) return null;
+    return _decrypt(val);
   }
 
   Future<void> clearAll() async {
-    await _storage.deleteAll();
+    final prefs = await _prefs;
+    await prefs.remove(_keyGoogleAccessToken);
+    await prefs.remove(_keyGoogleRefreshToken);
+    await prefs.remove(_keyGoogleTokenExpiry);
+    await prefs.remove(_keyCloudflareAccountId);
+    await prefs.remove(_keyCloudflareApiToken);
+    await prefs.remove(_keyCloudflareKvId);
+    await prefs.remove(_keyCloudflareWorkerUrl);
+    await prefs.remove(_keyAppsScriptUrl);
   }
 }
