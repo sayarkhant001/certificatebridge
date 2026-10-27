@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
@@ -50,6 +51,31 @@ class FontManager {
   /// Initialize default known fonts and scan directories
   Future<void> initialize({List<String>? additionalDirectories}) async {
     _registerDefaultFonts();
+
+    if (kIsWeb) {
+      try {
+        final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+        final assets = manifest.listAssets();
+        for (final assetPath in assets) {
+          if (assetPath.startsWith('assets/fonts/') &&
+              (assetPath.endsWith('.ttf') || assetPath.endsWith('.otf'))) {
+            final filename = p.basenameWithoutExtension(assetPath);
+            final family = _cleanFamilyName(filename);
+            final category = _categorizeFont(assetPath);
+            _addFont(AppFontInfo(
+              name: family,
+              family: family,
+              category: category,
+              path: assetPath,
+              isAsset: true,
+            ));
+          }
+        }
+      } catch (_) {
+        // Fallback gracefully on web
+      }
+      return;
+    }
 
     // Automatically scan the bundled asset font directories on the filesystem
     final defaultAssetDirs = [
@@ -119,6 +145,7 @@ class FontManager {
 
   /// Scans a local filesystem folder for .ttf and .otf font files
   Future<void> scanDirectory(String directoryPath) async {
+    if (kIsWeb) return;
     final dir = Directory(directoryPath);
     if (!await dir.exists()) return;
 
@@ -135,6 +162,7 @@ class FontManager {
 
   /// Dynamically register a font file with Flutter's FontLoader runtime
   Future<void> registerExternalFontFile(File fontFile) async {
+    if (kIsWeb) return;
     final filename = p.basenameWithoutExtension(fontFile.path);
     final ext = p.extension(fontFile.path).toLowerCase();
     if (ext != '.ttf' && ext != '.otf') return;
@@ -175,6 +203,7 @@ class FontManager {
         return null;
       }
     } else {
+      if (kIsWeb) return null;
       final file = File(fontInfo.path);
       if (await file.exists()) {
         return await file.readAsBytes();

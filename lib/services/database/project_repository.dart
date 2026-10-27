@@ -1,20 +1,48 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart' as p;
+import '../../models/display_config.dart';
 import '../../models/project_model.dart';
+import '../../models/template_config.dart';
 
 class ProjectRepository {
   static Database? _database;
+  static final List<ProjectModel> _inMemoryWebProjects = [
+    ProjectModel(
+      id: 'demo_project_1',
+      name: 'Graduation Diploma 2026',
+      description: 'Annual graduation certificates with Myanmar Unicode and English typography',
+      createdAt: DateTime.now().subtract(const Duration(days: 2)),
+      updatedAt: DateTime.now(),
+      totalCertificates: 250,
+      templatePath: null,
+      layoutJson: TemplateConfig.defaultConfig().toJson(),
+      displayConfigJson: DisplayConfig.defaultConfig().toJson(),
+    ),
+    ProjectModel(
+      id: 'demo_project_2',
+      name: 'Robotics Bootcamp Certificate',
+      description: 'Zero-cost edge verified certificate batch with Cloudflare KV QR',
+      createdAt: DateTime.now().subtract(const Duration(days: 5)),
+      updatedAt: DateTime.now().subtract(const Duration(hours: 3)),
+      totalCertificates: 85,
+      templatePath: null,
+      layoutJson: TemplateConfig.defaultConfig().toJson(),
+      displayConfigJson: DisplayConfig.defaultConfig().toJson(),
+    ),
+  ];
 
   static void initializeFfiIfNeeded() {
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
     }
   }
 
-  Future<Database> get database async {
+  Future<Database?> get database async {
+    if (kIsWeb) return null;
     if (_database != null) return _database!;
     _database = await _initDatabase();
     return _database!;
@@ -63,7 +91,17 @@ class ProjectRepository {
   }
 
   Future<void> insertProject(ProjectModel project) async {
-    final db = await database;
+    if (kIsWeb) {
+      final idx = _inMemoryWebProjects.indexWhere((p) => p.id == project.id);
+      if (idx >= 0) {
+        _inMemoryWebProjects[idx] = project;
+      } else {
+        _inMemoryWebProjects.insert(0, project);
+      }
+      return;
+    }
+
+    final db = (await database)!;
     await db.insert(
       'projects',
       project.toMap(),
@@ -72,20 +110,37 @@ class ProjectRepository {
   }
 
   Future<List<ProjectModel>> getAllProjects() async {
-    final db = await database;
+    if (kIsWeb) {
+      return List<ProjectModel>.from(_inMemoryWebProjects);
+    }
+
+    final db = (await database)!;
     final maps = await db.query('projects', orderBy: 'updated_at DESC');
     return List.generate(maps.length, (i) => ProjectModel.fromMap(maps[i]));
   }
 
   Future<ProjectModel?> getProjectById(String id) async {
-    final db = await database;
+    if (kIsWeb) {
+      final match = _inMemoryWebProjects.where((p) => p.id == id);
+      return match.isNotEmpty ? match.first : null;
+    }
+
+    final db = (await database)!;
     final maps = await db.query('projects', where: 'id = ?', whereArgs: [id]);
     if (maps.isEmpty) return null;
     return ProjectModel.fromMap(maps.first);
   }
 
   Future<void> updateProject(ProjectModel project) async {
-    final db = await database;
+    if (kIsWeb) {
+      final idx = _inMemoryWebProjects.indexWhere((p) => p.id == project.id);
+      if (idx >= 0) {
+        _inMemoryWebProjects[idx] = project;
+      }
+      return;
+    }
+
+    final db = (await database)!;
     await db.update(
       'projects',
       project.toMap(),
@@ -95,7 +150,12 @@ class ProjectRepository {
   }
 
   Future<void> deleteProject(String id) async {
-    final db = await database;
+    if (kIsWeb) {
+      _inMemoryWebProjects.removeWhere((p) => p.id == id);
+      return;
+    }
+
+    final db = (await database)!;
     await db.delete('projects', where: 'id = ?', whereArgs: [id]);
   }
 }
