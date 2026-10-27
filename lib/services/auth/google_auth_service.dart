@@ -20,6 +20,9 @@ class GoogleAuthService {
     'https://www.googleapis.com/auth/spreadsheets',
   ];
 
+  static const String defaultClientId = '367116221053-7n0vf5akeru7on6o2fjinrecpdoe99eg.apps.googleusercontent.com';
+  static const String defaultClientSecret = '1qsNodXNaWq1mQuBjUjmvhoO';
+
   String? _clientId;
   String? _clientSecret;
 
@@ -44,17 +47,19 @@ class GoogleAuthService {
 
   /// Executes the 1-Click PKCE OAuth Loopback flow
   Future<bool> authenticate({String? customClientId, String? customClientSecret}) async {
-    final clientId = customClientId ?? _clientId ?? await _storage.getGoogleClientId();
-    final clientSecret = customClientSecret ?? _clientSecret ?? await _storage.getGoogleClientSecret();
+    final savedClientId = await _storage.getGoogleClientId();
+    final savedClientSecret = await _storage.getGoogleClientSecret();
 
-    if (clientId == null || clientId.trim().isEmpty) {
-      throw Exception(
-        'Please enter your Google OAuth Client ID, or use the Google Apps Script Web App for zero-config setup.',
-      );
-    }
+    final clientId = (customClientId != null && customClientId.trim().isNotEmpty)
+        ? customClientId.trim()
+        : (savedClientId ?? defaultClientId);
 
-    _clientId = clientId.trim();
-    _clientSecret = clientSecret?.trim();
+    final clientSecret = (customClientSecret != null && customClientSecret.trim().isNotEmpty)
+        ? customClientSecret.trim()
+        : (savedClientSecret ?? defaultClientSecret);
+
+    _clientId = clientId;
+    _clientSecret = clientSecret;
     await _storage.saveGoogleClientConfig(clientId: _clientId!, clientSecret: _clientSecret);
 
     final codeVerifier = _generateCodeVerifier();
@@ -119,6 +124,22 @@ class GoogleAuthService {
         refreshToken: refreshToken,
         expiresInSeconds: expiresIn,
       );
+
+      try {
+        final userinfoRes = await http.get(
+          Uri.parse('https://www.googleapis.com/oauth2/v2/userinfo'),
+          headers: {'Authorization': 'Bearer $accessToken'},
+        );
+        if (userinfoRes.statusCode == 200) {
+          final userInfo = jsonDecode(userinfoRes.body) as Map<String, dynamic>;
+          final email = userInfo['email'] as String?;
+          if (email != null && email.isNotEmpty) {
+            await _storage.saveGoogleUserEmail(email);
+          }
+        }
+      } catch (_) {
+        // Fallback gracefully
+      }
 
       return true;
     } else {

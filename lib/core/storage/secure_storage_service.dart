@@ -5,6 +5,7 @@ class SecureStorageService {
   static const String _keyGoogleAccessToken = 'sec_google_access_token';
   static const String _keyGoogleRefreshToken = 'sec_google_refresh_token';
   static const String _keyGoogleTokenExpiry = 'sec_google_token_expiry';
+  static const String _keyGoogleUserEmail = 'sec_google_user_email';
   static const String _keyGoogleClientId = 'sec_google_client_id';
   static const String _keyGoogleClientSecret = 'sec_google_client_secret';
   static const String _keyCloudflareAccountId = 'sec_cloudflare_account_id';
@@ -60,6 +61,18 @@ class SecureStorageService {
   Future<String?> getGoogleRefreshToken() async {
     final prefs = await _prefs;
     final val = prefs.getString(_keyGoogleRefreshToken);
+    if (val == null) return null;
+    return _decrypt(val);
+  }
+
+  Future<void> saveGoogleUserEmail(String email) async {
+    final prefs = await _prefs;
+    await prefs.setString(_keyGoogleUserEmail, _encrypt(email));
+  }
+
+  Future<String?> getGoogleUserEmail() async {
+    final prefs = await _prefs;
+    final val = prefs.getString(_keyGoogleUserEmail);
     if (val == null) return null;
     return _decrypt(val);
   }

@@ -22,12 +22,14 @@ class _SetupWizardDialogState extends State<SetupWizardDialog> with SingleTicker
   late TabController _googleTabController;
 
   bool _isGoogleConnected = false;
+  String? _googleUserEmail;
   bool _isCloudflareConfigured = false;
   String? _cfAccountName;
   String? _cfAccountId;
   bool _isLoadingGoogle = false;
   bool _isLoadingCf = false;
   bool _showManualCf = false;
+  bool _showManualGoogle = false;
 
   final TextEditingController _googleClientIdCtrl = TextEditingController();
   final TextEditingController _googleClientSecretCtrl = TextEditingController();
@@ -58,6 +60,7 @@ class _SetupWizardDialogState extends State<SetupWizardDialog> with SingleTicker
 
   Future<void> _loadCurrentStatus() async {
     final googleConnected = await _googleAuth.isSignedIn();
+    final googleEmail = await _storage.getGoogleUserEmail();
     final cfCreds = await _storage.getCloudflareCredentials();
     final appsScriptUrl = await _storage.getAppsScriptUrl();
     final savedClientId = await _storage.getGoogleClientId();
@@ -65,6 +68,7 @@ class _SetupWizardDialogState extends State<SetupWizardDialog> with SingleTicker
 
     setState(() {
       _isGoogleConnected = googleConnected;
+      _googleUserEmail = googleEmail;
       if (savedClientId != null) _googleClientIdCtrl.text = savedClientId;
       if (savedClientSecret != null) _googleClientSecretCtrl.text = savedClientSecret;
 
@@ -110,6 +114,38 @@ class _SetupWizardDialogState extends State<SetupWizardDialog> with SingleTicker
     }
   }
 
+  /// 1-Click Google Account Login via OAuth (No manual ID or secret!)
+  Future<void> _connectGoogle({String? customClientId, String? customClientSecret}) async {
+    setState(() {
+      _isLoadingGoogle = true;
+      _statusMessage = null;
+    });
+
+    try {
+      final success = await _googleAuth.authenticate(
+        customClientId: customClientId,
+        customClientSecret: customClientSecret,
+      );
+      final email = await _storage.getGoogleUserEmail();
+      setState(() {
+        _isGoogleConnected = success;
+        _googleUserEmail = email;
+        _statusMessage = email != null
+            ? 'Google Account ($email) connected successfully!'
+            : 'Google Account (Drive & Sheets) connected successfully!';
+        _isSuccessMessage = true;
+      });
+      await _loadCurrentStatus();
+    } catch (e) {
+      setState(() {
+        _statusMessage = 'Google Authentication Error: $e';
+        _isSuccessMessage = false;
+      });
+    } finally {
+      setState(() => _isLoadingGoogle = false);
+    }
+  }
+
   /// Manual Cloudflare configuration fallback
   Future<void> _saveCloudflareManual() async {
     final accountId = _cfAccountIdCtrl.text.trim();
@@ -149,44 +185,6 @@ class _SetupWizardDialogState extends State<SetupWizardDialog> with SingleTicker
       });
     } finally {
       setState(() => _isLoadingCf = false);
-    }
-  }
-
-  /// Connect Google Account via PKCE Loopback
-  Future<void> _connectGoogle() async {
-    final clientId = _googleClientIdCtrl.text.trim();
-    final clientSecret = _googleClientSecretCtrl.text.trim();
-
-    if (clientId.isEmpty) {
-      setState(() {
-        _statusMessage = 'Please paste your Google OAuth Client ID first, or use the Google Apps Script method.';
-        _isSuccessMessage = false;
-      });
-      return;
-    }
-
-    setState(() {
-      _isLoadingGoogle = true;
-      _statusMessage = null;
-    });
-
-    try {
-      final success = await _googleAuth.authenticate(
-        customClientId: clientId,
-        customClientSecret: clientSecret.isNotEmpty ? clientSecret : null,
-      );
-      setState(() {
-        _isGoogleConnected = success;
-        _statusMessage = 'Google Account (Drive & Sheets) connected successfully!';
-        _isSuccessMessage = true;
-      });
-    } catch (e) {
-      setState(() {
-        _statusMessage = 'Google Authentication Error: $e';
-        _isSuccessMessage = false;
-      });
-    } finally {
-      setState(() => _isLoadingGoogle = false);
     }
   }
 
@@ -435,14 +433,15 @@ class _SetupWizardDialogState extends State<SetupWizardDialog> with SingleTicker
 
               const SizedBox(height: 22),
 
-              // Section 2: Google Drive & Sheets (Apps Script or GCP OAuth)
+              // Section 2: Google Drive & Sheets (1-Click Account Login)
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F172A),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: _isGoogleConnected ? const Color(0xFF059669) : const Color(0xFF334155),
+                    color: _isGoogleConnected ? const Color(0xFF059669) : const Color(0xFF2563EB),
+                    width: 1.5,
                   ),
                 ),
                 child: Column(
@@ -453,7 +452,7 @@ class _SetupWizardDialogState extends State<SetupWizardDialog> with SingleTicker
                       children: [
                         const Row(
                           children: [
-                            Icon(Icons.cloud_upload_outlined, color: Colors.amber, size: 22),
+                            Icon(Icons.cloud_upload_outlined, color: Colors.blueAccent, size: 22),
                             SizedBox(width: 8),
                             Text('Google Drive & Sheets (BYOA)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                           ],
@@ -465,7 +464,9 @@ class _SetupWizardDialogState extends State<SetupWizardDialog> with SingleTicker
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            _isGoogleConnected ? 'Connected' : 'Not Connected',
+                            _isGoogleConnected
+                                ? (_googleUserEmail != null ? 'Connected: $_googleUserEmail' : 'Connected')
+                                : 'Not Connected',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
@@ -475,132 +476,133 @@ class _SetupWizardDialogState extends State<SetupWizardDialog> with SingleTicker
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-
-                    // Tab bar for Method selection
-                    TabBar(
-                      controller: _googleTabController,
-                      indicatorColor: const Color(0xFF2563EB),
-                      labelColor: Colors.white,
-                      unselectedLabelColor: Colors.white54,
-                      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                      tabs: const [
-                        Tab(text: 'Google Apps Script (Zero-Config, Free)'),
-                        Tab(text: 'Google Cloud OAuth 2.0 PKCE'),
-                      ],
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Log in with your Google account in 1 click. Authorize access to Google Drive (for certificate storage) and Google Sheets (for recipient rosters) with \$0 vendor cost.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8), height: 1.4),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
 
+                    // Primary 1-Click OAuth Button
                     SizedBox(
-                      height: 220,
-                      child: TabBarView(
-                        controller: _googleTabController,
-                        children: [
-                          // Tab 1: Google Apps Script (Fastest, No GCP setup required!)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Recommended for non-technical users. Google Apps Script runs inside your Google account with zero Google Cloud Console configuration and zero Client ID errors.',
-                                style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8), height: 1.4),
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  OutlinedButton.icon(
-                                    onPressed: () {
-                                      Clipboard.setData(const ClipboardData(
-                                        text: '// CertiBridge Google Apps Script\n// Copy from apps_script/code.gs in your certibri workspace',
-                                      ));
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('apps_script/code.gs path copied! See apps_script folder.')),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.copy, size: 14),
-                                    label: const Text('Copy apps_script/code.gs', style: TextStyle(fontSize: 11)),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  TextButton.icon(
-                                    onPressed: () => launchUrl(Uri.parse('https://script.google.com')),
-                                    icon: const Icon(Icons.open_in_new, size: 14),
-                                    label: const Text('Open Google Apps Script', style: TextStyle(fontSize: 11)),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextField(
-                                      controller: _appsScriptUrlCtrl,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Apps Script Web App Exec URL',
-                                        isDense: true,
-                                        hintText: 'https://script.google.com/macros/s/.../exec',
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  ElevatedButton(
-                                    onPressed: _saveAppsScript,
-                                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669)),
-                                    child: const Text('Save & Connect'),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isLoadingGoogle ? null : () => _connectGoogle(),
+                        icon: _isLoadingGoogle
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.login, size: 18),
+                        label: Text(
+                          _isGoogleConnected ? '⚡ Reconnect Google Account (1-Click)' : '⚡ Log In with Google (1-Click, No Manual ID)',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
 
-                          // Tab 2: Custom Google Cloud OAuth 2.0 PKCE
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'To avoid "Error 401: invalid_client", Google requires a Client ID from your Google Cloud Console.',
-                                style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  OutlinedButton.icon(
-                                    onPressed: _pickGoogleCredentialsJson,
-                                    icon: const Icon(Icons.file_upload_outlined, size: 14),
-                                    label: const Text('Pick credentials.json', style: TextStyle(fontSize: 11)),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  TextButton.icon(
-                                    onPressed: () => launchUrl(Uri.parse('https://console.cloud.google.com/apis/credentials')),
-                                    icon: const Icon(Icons.open_in_new, size: 14),
-                                    label: const Text('Create GCP Client ID', style: TextStyle(fontSize: 11)),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              TextField(
-                                controller: _googleClientIdCtrl,
-                                decoration: const InputDecoration(
-                                  labelText: 'Google OAuth Client ID',
-                                  isDense: true,
-                                  hintText: 'xxxx.apps.googleusercontent.com',
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              ElevatedButton.icon(
-                                onPressed: _isLoadingGoogle ? null : _connectGoogle,
-                                icon: _isLoadingGoogle
-                                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                    : const Icon(Icons.login, size: 16),
-                                label: Text(_isGoogleConnected ? 'Reconnect Google Account' : 'Authorize Google Account'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF2563EB),
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                ),
-                              ),
-                            ],
+                    const SizedBox(height: 10),
+                    GestureDetector(
+                      onTap: () => setState(() => _showManualGoogle = !_showManualGoogle),
+                      child: Row(
+                        children: [
+                          Icon(_showManualGoogle ? Icons.arrow_drop_down : Icons.arrow_right, color: Colors.white54, size: 18),
+                          Text(
+                            _showManualGoogle ? 'Hide advanced options' : 'Advanced: Google Apps Script & Custom GCP Client ID (Optional)',
+                            style: const TextStyle(fontSize: 11, color: Colors.white54),
                           ),
                         ],
                       ),
                     ),
+
+                    if (_showManualGoogle) ...[
+                      const SizedBox(height: 14),
+                      TabBar(
+                        controller: _googleTabController,
+                        indicatorColor: const Color(0xFF2563EB),
+                        labelColor: Colors.white,
+                        unselectedLabelColor: Colors.white54,
+                        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        tabs: const [
+                          Tab(text: 'Google Apps Script (Zero-Config)'),
+                          Tab(text: 'Custom GCP Client ID'),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      SizedBox(
+                        height: 160,
+                        child: TabBarView(
+                          controller: _googleTabController,
+                          children: [
+                            // Tab 1: Google Apps Script
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Alternative connection method via deployed Web App URL.',
+                                  style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _appsScriptUrlCtrl,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Apps Script Web App Exec URL',
+                                          isDense: true,
+                                          hintText: 'https://script.google.com/macros/s/.../exec',
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton(
+                                      onPressed: _saveAppsScript,
+                                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669)),
+                                      child: const Text('Save'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+
+                            // Tab 2: Custom GCP Client ID
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    OutlinedButton.icon(
+                                      onPressed: _pickGoogleCredentialsJson,
+                                      icon: const Icon(Icons.file_upload_outlined, size: 14),
+                                      label: const Text('Pick credentials.json', style: TextStyle(fontSize: 11)),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    TextButton.icon(
+                                      onPressed: () => launchUrl(Uri.parse('https://console.cloud.google.com/apis/credentials')),
+                                      icon: const Icon(Icons.open_in_new, size: 14),
+                                      label: const Text('GCP Console', style: TextStyle(fontSize: 11)),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  controller: _googleClientIdCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Custom Google OAuth Client ID',
+                                    isDense: true,
+                                    hintText: 'xxxx.apps.googleusercontent.com',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
