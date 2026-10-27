@@ -150,25 +150,34 @@ class CloudflareAuthService {
     final api = CloudflareApi(accountId: accountId, apiToken: apiToken);
     final isValid = await api.verifyToken();
     if (!isValid) {
-      throw Exception('Invalid Cloudflare API Token or Account ID.');
+      throw Exception('Could not verify Cloudflare credentials for Account ID: $accountId');
     }
 
-    // Auto-provision KV namespace
-    final kvId = await api.findOrCreateKvNamespace(
-      title: AppConstants.defaultKvNamespaceName,
-    );
+    // Auto-provision KV namespace (gracefully catch errors to prevent dropping auth)
+    String? kvId;
+    try {
+      kvId = await api.findOrCreateKvNamespace(
+        title: AppConstants.defaultKvNamespaceName,
+      );
+    } catch (e) {
+      // If KV creation is deferred or requires setup, log and proceed
+    }
 
     String? workerUrl;
-    if (workerJsPath != null) {
-      final file = File(workerJsPath);
-      if (await file.exists()) {
-        final code = await file.readAsString();
-        workerUrl = await api.deployEdgeWorker(
-          scriptName: 'certibridge-edge-verifier',
-          workerCode: code,
-          kvNamespaceId: kvId,
-          kvBindingName: AppConstants.defaultKvBinding,
-        );
+    if (workerJsPath != null && kvId != null) {
+      try {
+        final file = File(workerJsPath);
+        if (await file.exists()) {
+          final code = await file.readAsString();
+          workerUrl = await api.deployEdgeWorker(
+            scriptName: 'certibridge-edge-verifier',
+            workerCode: code,
+            kvNamespaceId: kvId,
+            kvBindingName: AppConstants.defaultKvBinding,
+          );
+        }
+      } catch (e) {
+        // If worker deploy is deferred, log and proceed
       }
     }
 

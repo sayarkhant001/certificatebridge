@@ -52,11 +52,17 @@ class GoogleAuthService {
 
     final clientId = (customClientId != null && customClientId.trim().isNotEmpty)
         ? customClientId.trim()
-        : (savedClientId ?? defaultClientId);
+        : savedClientId;
+
+    if (clientId == null || clientId.isEmpty) {
+      throw Exception(
+        'Google OAuth requires your own GCP Client ID (with your email in "Test Users"). Or use Google Apps Script for 1-click zero-config!',
+      );
+    }
 
     final clientSecret = (customClientSecret != null && customClientSecret.trim().isNotEmpty)
         ? customClientSecret.trim()
-        : (savedClientSecret ?? defaultClientSecret);
+        : savedClientSecret;
 
     _clientId = clientId;
     _clientSecret = clientSecret;

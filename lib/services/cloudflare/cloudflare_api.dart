@@ -14,16 +14,30 @@ class CloudflareApi {
         'Content-Type': 'application/json',
       };
 
-  /// Verify API token validity
+  /// Verify API token validity (supports both User API Tokens and OAuth Bearer tokens)
   Future<bool> verifyToken() async {
-    final response = await http.get(
-      Uri.parse('$_baseUrl/user/tokens/verify'),
-      headers: _headers,
-    );
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['success'] == true;
-    }
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/user/tokens/verify'),
+        headers: _headers,
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) return true;
+      }
+    } catch (_) {}
+
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/accounts/$accountId'),
+        headers: _headers,
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) return true;
+      }
+    } catch (_) {}
+
     return false;
   }
 

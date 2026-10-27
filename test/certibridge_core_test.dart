@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:certibridge/models/certificate_record.dart';
 import 'package:certibridge/models/display_config.dart';

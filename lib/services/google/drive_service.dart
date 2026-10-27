@@ -5,6 +5,8 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../auth/google_auth_service.dart';
 
+import 'apps_script_service.dart';
+
 class DriveFolderItem {
   final String id;
   final String name;
@@ -28,12 +30,20 @@ class DriveFolderItem {
 
 class DriveService {
   final GoogleAuthService _authService = GoogleAuthService();
+  final AppsScriptService _appsScriptService = AppsScriptService();
   final Random _random = Random();
 
   /// Fetches folder hierarchy accessible in user's Drive
   Future<List<DriveFolderItem>> listFolders() async {
     final token = await _authService.getValidAccessToken();
-    if (token == null) throw Exception('Google account is not authenticated.');
+    if (token == null) {
+      return [
+        DriveFolderItem(
+          id: 'certibridge_drive_folder',
+          name: 'CertiBridge Certificates (Google Drive)',
+        ),
+      ];
+    }
 
     final query = "mimeType = 'application/vnd.google-apps.folder' and trashed = false";
     final uri = Uri.parse(
@@ -94,7 +104,13 @@ class DriveService {
     int maxRetries = 5,
   }) async {
     final token = await _authService.getValidAccessToken();
-    if (token == null) throw Exception('Google account is not authenticated.');
+    if (token == null) {
+      try {
+        return await _appsScriptService.uploadCertificate(file: file);
+      } catch (e) {
+        throw Exception('Google Account is not connected (OAuth or Apps Script): $e');
+      }
+    }
 
     final fileSize = await file.length();
     final filename = file.path.split(Platform.pathSeparator).last;

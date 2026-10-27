@@ -33,6 +33,10 @@ class _DriveFolderPickerDialogState extends State<DriveFolderPickerDialog> {
       final list = await _driveService.listFolders();
       setState(() {
         _folders = list;
+        if (list.isNotEmpty && _selectedFolderId == null) {
+          _selectedFolderId = list.first.id;
+          _selectedFolderName = list.first.name;
+        }
         _isLoading = false;
       });
     } catch (e) {
