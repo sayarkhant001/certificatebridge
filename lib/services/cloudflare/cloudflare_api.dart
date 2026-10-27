@@ -142,22 +142,61 @@ class CloudflareApi {
 
   /// Fetch all active domains/zones in the user's Cloudflare account
   Future<List<Map<String, dynamic>>> listDomains() async {
+    final domainMap = <String, Map<String, dynamic>>{};
+
+    // 1. Try listing Cloudflare DNS Zones (Global & Account Scoped)
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/zones?account.id=$accountId&status=active'),
+      var response = await http.get(
+        Uri.parse('$_baseUrl/zones?per_page=50'),
         headers: _headers,
       );
+      if (response.statusCode != 200 && accountId.isNotEmpty) {
+        response = await http.get(
+          Uri.parse('$_baseUrl/zones?account.id=$accountId&per_page=50'),
+          headers: _headers,
+        );
+      }
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final result = data['result'] as List<dynamic>? ?? [];
-        return result.map((z) => {
-          'id': z['id'] as String,
-          'name': z['name'] as String,
-          'status': z['status'] as String,
-        }).toList();
+        for (final z in result) {
+          final name = z['name'] as String;
+          domainMap[name] = {
+            'id': z['id'] as String,
+            'name': name,
+            'status': z['status'] as String? ?? 'active',
+            'type': 'zone',
+          };
+        }
       }
     } catch (_) {}
-    return [];
+
+    // 2. Try listing Workers Custom Domains attached to this account
+    if (accountId.isNotEmpty) {
+      try {
+        final response = await http.get(
+          Uri.parse('$_baseUrl/accounts/$accountId/workers/domains'),
+          headers: _headers,
+        );
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final result = data['result'] as List<dynamic>? ?? [];
+          for (final d in result) {
+            final hostname = d['hostname'] as String?;
+            if (hostname != null && !domainMap.containsKey(hostname)) {
+              domainMap[hostname] = {
+                'id': d['id'] as String? ?? hostname,
+                'name': hostname,
+                'status': 'active',
+                'type': 'workers_custom_domain',
+              };
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    return domainMap.values.toList();
   }
 
   /// Get user's Cloudflare workers.dev subdomain

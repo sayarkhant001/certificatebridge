@@ -13,7 +13,7 @@ class CanvasElementWidget extends StatefulWidget {
   final File? samplePhotoFile;
   final VoidCallback onSelect;
   final ValueChanged<CanvasElement> onElementChanged;
-  final VoidCallback onOpenContextMenu;
+  final VoidCallback? onOpenContextMenu;
   final Function(Rect currentRect)? onDragUpdate;
   final VoidCallback? onDragEnd;
   final VoidCallback? onDoubleTap;
@@ -29,7 +29,7 @@ class CanvasElementWidget extends StatefulWidget {
     this.samplePhotoFile,
     required this.onSelect,
     required this.onElementChanged,
-    required this.onOpenContextMenu,
+    this.onOpenContextMenu,
     this.onDragUpdate,
     this.onDragEnd,
     this.onDoubleTap,
@@ -156,8 +156,8 @@ class _CanvasElementWidgetState extends State<CanvasElementWidget> {
           widget.onSelect();
         },
         onDoubleTap: _startInlineEditing,
-        onSecondaryTapUp: (_) => widget.onOpenContextMenu(), // Windows Mouse Right-Click
-        onLongPressStart: (_) => widget.onOpenContextMenu(), // Android Long-Press
+        onSecondaryTapUp: (_) => widget.onSelect(), // Windows Mouse Right-Click selects element for inspector
+        onLongPressStart: (_) => widget.onSelect(), // Android Long-Press selects element
         onPanUpdate: _isInlineEditing
             ? null
             : (details) {

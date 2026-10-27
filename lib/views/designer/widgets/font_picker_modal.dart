@@ -58,12 +58,13 @@ class _FontPickerModalState extends State<FontPickerModal> with SingleTickerProv
       itemBuilder: (ctx, i) {
         final font = filtered[i];
         final isSelected = font.family == widget.currentFontFamily;
+        _fontManager.ensureFontLoaded(font);
 
         final previewText = font.category == FontCategory.myanmarUnicode
-            ? 'ဂုဏ်ထူးဆောင်လက်မှတ် (Unicode)'
+            ? 'ဂုဏ်ထူးဆောင်လက်မှတ် (မောင်ကျော်ဇော - ၂၀၂၆)'
             : font.category == FontCategory.myanmarWin
-                ? 'ဂုဏ်ထူးဆောင်လက်မှတ် (WinFont)'
-                : 'Certificate of Excellence (ABC 123)';
+                ? 'ဂုဏ်ထူးဆောင်လက်မှတ် (WinFont ABC)'
+                : 'Certificate of Achievement (ABC 123)';
 
         return Container(
           margin: const EdgeInsets.only(bottom: 8),

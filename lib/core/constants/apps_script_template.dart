@@ -260,3 +260,7 @@ function escapeHtml(text) {
     .replace(/'/g, "&#039;");
 }
 ''';
+
+class AppsScriptTemplate {
+  static const String code = appsScriptTemplateCode;
+}

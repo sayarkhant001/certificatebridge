@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../../core/constants/apps_script_template.dart';
 import '../../services/google/sheets_service.dart';
 
 class GoogleSheetImportResult {
@@ -74,10 +76,19 @@ class _GoogleSheetPickerDialogState extends State<GoogleSheetPickerDialog>
         _isLoadingDrive = false;
       });
     } catch (e) {
+      final errStr = e.toString();
       setState(() {
-        _driveError = e.toString();
+        _driveError = errStr;
         _isLoadingDrive = false;
       });
+      if (errStr.contains('list_drive_spreadsheets') || errStr.contains('Unrecognized action')) {
+        // Auto-switch to the Paste URL tab so user isn't stuck
+        Future.delayed(const Duration(milliseconds: 250), () {
+          if (mounted && _tabController.index == 0) {
+            _tabController.animateTo(1);
+          }
+        });
+      }
     }
   }
 
@@ -237,17 +248,63 @@ class _GoogleSheetPickerDialogState extends State<GoogleSheetPickerDialog>
                               ? const Center(child: CircularProgressIndicator())
                               : _driveError != null
                                   ? Center(
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(_driveError!, style: const TextStyle(color: Color(0xFFF87171), fontSize: 12)),
-                                          const SizedBox(height: 8),
-                                          ElevatedButton.icon(
-                                            onPressed: _loadDriveFiles,
-                                            icon: const Icon(Icons.refresh, size: 16),
-                                            label: const Text('Retry'),
-                                          ),
-                                        ],
+                                      child: Container(
+                                        padding: const EdgeInsets.all(20),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF1E293B),
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(color: const Color(0xFF334155)),
+                                        ),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.info_outline, color: Color(0xFFFBBF24), size: 36),
+                                            const SizedBox(height: 10),
+                                            const Text(
+                                              'Drive Browsing Requires Updated Apps Script',
+                                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            const Text(
+                                              'Your deployed Google Apps Script does not have "list_drive_spreadsheets" enabled yet.\nYou can paste any Google Sheet URL or ID directly in the next tab, or copy the updated code below.',
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(fontSize: 11, color: Colors.white60),
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Wrap(
+                                              spacing: 8,
+                                              runSpacing: 8,
+                                              alignment: WrapAlignment.center,
+                                              children: [
+                                                ElevatedButton.icon(
+                                                  onPressed: () => _tabController.animateTo(1),
+                                                  icon: const Icon(Icons.link, size: 16),
+                                                  label: const Text('📋 Paste Sheet URL Directly'),
+                                                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
+                                                ),
+                                                OutlinedButton.icon(
+                                                  onPressed: () {
+                                                    Clipboard.setData(ClipboardData(text: AppsScriptTemplate.code));
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text('Updated Apps Script copied! Paste into script.google.com & deploy new version.'),
+                                                        backgroundColor: Color(0xFF059669),
+                                                      ),
+                                                    );
+                                                  },
+                                                  icon: const Icon(Icons.copy, size: 16, color: Color(0xFF34D399)),
+                                                  label: const Text('⚡ Copy Updated Script', style: TextStyle(color: Color(0xFF34D399))),
+                                                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF059669))),
+                                                ),
+                                                TextButton.icon(
+                                                  onPressed: _loadDriveFiles,
+                                                  icon: const Icon(Icons.refresh, size: 16, color: Colors.white60),
+                                                  label: const Text('Retry', style: TextStyle(color: Colors.white60)),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     )
                                   : _driveFiles.isEmpty

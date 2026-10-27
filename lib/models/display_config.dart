@@ -19,6 +19,10 @@ class DisplayConfig {
   final String themePreset; // emerald, sapphire, gold, crimson, obsidian
   final bool allowPrint;
   final String? customSubdomain;
+  final bool allowVerifierEmail;
+  final String verifierInstructions;
+  final int slugEntropyLength;
+  final bool enableRateLimiting;
 
   DisplayConfig({
     required this.publicColumns,
@@ -37,8 +41,12 @@ class DisplayConfig {
     this.headlineText = 'Permanent Cryptographic Record Verified',
     this.footerText = 'Secured by CertiBridge Zero-Cost Local-First Architecture &bull; Powered by Cloudflare KV Edge',
     this.themePreset = 'emerald',
-    this.allowPrint = true,
+    this.allowPrint = false,
     this.customSubdomain,
+    this.allowVerifierEmail = true,
+    this.verifierInstructions = 'Enter your email address to receive an official cryptographic verification report.',
+    this.slugEntropyLength = 40,
+    this.enableRateLimiting = true,
   });
 
   Map<String, dynamic> toMap() {
@@ -60,6 +68,10 @@ class DisplayConfig {
       'theme_preset': themePreset,
       'allow_print': allowPrint,
       'custom_subdomain': customSubdomain,
+      'allow_verifier_email': allowVerifierEmail,
+      'verifier_instructions': verifierInstructions,
+      'slug_entropy_length': slugEntropyLength,
+      'enable_rate_limiting': enableRateLimiting,
     };
   }
 
@@ -86,8 +98,13 @@ class DisplayConfig {
       headlineText: map['headline_text'] as String? ?? 'Permanent Cryptographic Record Verified',
       footerText: map['footer_text'] as String? ?? 'Secured by CertiBridge Zero-Cost Local-First Architecture &bull; Powered by Cloudflare KV Edge',
       themePreset: map['theme_preset'] as String? ?? 'emerald',
-      allowPrint: map['allow_print'] as bool? ?? true,
+      allowPrint: map['allow_print'] as bool? ?? false,
       customSubdomain: map['custom_subdomain'] as String?,
+      allowVerifierEmail: map['allow_verifier_email'] as bool? ?? true,
+      verifierInstructions: map['verifier_instructions'] as String? ??
+          'Enter your email address to receive an official cryptographic verification report.',
+      slugEntropyLength: map['slug_entropy_length'] as int? ?? 40,
+      enableRateLimiting: map['enable_rate_limiting'] as bool? ?? true,
     );
   }
 
@@ -125,6 +142,10 @@ class DisplayConfig {
     String? themePreset,
     bool? allowPrint,
     String? customSubdomain,
+    bool? allowVerifierEmail,
+    String? verifierInstructions,
+    int? slugEntropyLength,
+    bool? enableRateLimiting,
   }) {
     return DisplayConfig(
       publicColumns: publicColumns ?? this.publicColumns,
@@ -144,6 +165,10 @@ class DisplayConfig {
       themePreset: themePreset ?? this.themePreset,
       allowPrint: allowPrint ?? this.allowPrint,
       customSubdomain: customSubdomain ?? this.customSubdomain,
+      allowVerifierEmail: allowVerifierEmail ?? this.allowVerifierEmail,
+      verifierInstructions: verifierInstructions ?? this.verifierInstructions,
+      slugEntropyLength: slugEntropyLength ?? this.slugEntropyLength,
+      enableRateLimiting: enableRateLimiting ?? this.enableRateLimiting,
     );
   }
 }

@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/canvas_element.dart';
 import '../../models/display_config.dart';
@@ -11,12 +13,12 @@ import '../../services/engine/font_manager.dart';
 import '../../services/excel/excel_service.dart';
 import '../../services/google/sheets_service.dart';
 import '../batch/batch_progress_view.dart';
+import '../batch/canva_bulk_data_table_dialog.dart';
 import '../batch/google_sheet_picker_dialog.dart';
 import '../privacy/verification_page_designer_dialog.dart';
 import 'live_preview_bar.dart';
 import 'widgets/alignment_guidelines_overlay.dart';
 import 'widgets/canvas_element_widget.dart';
-import 'widgets/context_menu_overlay.dart';
 import 'widgets/properties_inspector_panel.dart';
 
 class VisualCanvasView extends StatefulWidget {
@@ -40,7 +42,6 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
 
   int _currentPageIndex = 0;
   String? _selectedElementId;
-  CanvasElement? _contextMenuElement;
 
   // Ingested Dataset
   List<Map<String, dynamic>> _datasetRows = [];
@@ -56,6 +57,17 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
   List<double> _snapLinesX = [];
   List<double> _snapLinesY = [];
 
+  // Collapsible Sidebars (Canva Pro Workspace)
+  bool _isLeftDrawerExpanded = true;
+  bool _isRightPanelVisible = true;
+
+  // Undo / Redo History Stacks
+  final List<String> _undoStack = [];
+  final List<String> _redoStack = [];
+
+  // Keyboard Shortcuts Focus Node
+  final FocusNode _canvasFocusNode = FocusNode();
+
   // Canva-style Left Navigation Rail
   int _activeLeftTabIndex = 0; // 0: Elements, 1: Data Columns, 2: Layers, 3: Background
 
@@ -66,9 +78,52 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
     _templateConfig = TemplateConfig.fromJson(_project.layoutJson);
     _displayConfig = DisplayConfig.fromJson(_project.displayConfigJson);
     _fontManager.initialize();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _zoomToFit();
+    });
   }
 
-  Future<void> _saveProject() async {
+  @override
+  void dispose() {
+    _canvasFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _recordHistory() {
+    final currentJson = _templateConfig.toJson();
+    if (_undoStack.isNotEmpty && _undoStack.last == currentJson) return;
+    _undoStack.add(currentJson);
+    if (_undoStack.length > 50) _undoStack.removeAt(0);
+    _redoStack.clear();
+  }
+
+  void _undo() {
+    if (_undoStack.isEmpty) return;
+    _redoStack.add(_templateConfig.toJson());
+    final previousJson = _undoStack.removeLast();
+    setState(() {
+      _templateConfig = TemplateConfig.fromJson(previousJson);
+      if (_selectedElementId != null) {
+        final exists = _templateConfig.pages[_currentPageIndex].elements.any((e) => e.id == _selectedElementId);
+        if (!exists) _selectedElementId = null;
+      }
+    });
+    _saveProject(recordHistory: false);
+  }
+
+  void _redo() {
+    if (_redoStack.isEmpty) return;
+    _undoStack.add(_templateConfig.toJson());
+    final nextJson = _redoStack.removeLast();
+    setState(() {
+      _templateConfig = TemplateConfig.fromJson(nextJson);
+    });
+    _saveProject(recordHistory: false);
+  }
+
+  Future<void> _saveProject({bool recordHistory = false}) async {
+    if (recordHistory) _recordHistory();
     final updated = _project.copyWith(
       layoutJson: _templateConfig.toJson(),
       displayConfigJson: _displayConfig.toJson(),
@@ -80,6 +135,7 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
   }
 
   void _addElement(CanvasElementType type, {String? text, String? boundColumn}) {
+    _recordHistory();
     final currentPage = _templateConfig.pages[_currentPageIndex];
     final id = const Uuid().v4().substring(0, 8);
 
@@ -148,9 +204,11 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
       _selectedElementId = id;
     });
     _saveProject();
+    _canvasFocusNode.requestFocus();
   }
 
-  void _updateElement(CanvasElement element) {
+  void _updateElement(CanvasElement element, {bool recordUndo = true}) {
+    if (recordUndo) _recordHistory();
     final currentPage = _templateConfig.pages[_currentPageIndex];
     final updatedElements = currentPage.elements.map((e) => e.id == element.id ? element : e).toList();
     final updatedPages = List<TemplatePage>.from(_templateConfig.pages);
@@ -174,6 +232,7 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
   }
 
   void _deleteElement(String elementId) {
+    _recordHistory();
     final currentPage = _templateConfig.pages[_currentPageIndex];
     final updatedElements = currentPage.elements.where((e) => e.id != elementId).toList();
     final updatedPages = List<TemplatePage>.from(_templateConfig.pages);
@@ -195,12 +254,13 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
       if (_selectedElementId == elementId) {
         _selectedElementId = null;
       }
-      _contextMenuElement = null;
     });
     _saveProject();
+    _canvasFocusNode.requestFocus();
   }
 
   void _duplicateElement(CanvasElement element) {
+    _recordHistory();
     final newId = const Uuid().v4().substring(0, 8);
     final cloned = element.copyWith(
       id: newId,
@@ -230,9 +290,11 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
       _selectedElementId = newId;
     });
     _saveProject();
+    _canvasFocusNode.requestFocus();
   }
 
   void _bringToFront(String id) {
+    _recordHistory();
     final currentPage = _templateConfig.pages[_currentPageIndex];
     final el = currentPage.elements.firstWhere((e) => e.id == id, orElse: () => currentPage.elements.first);
     final updatedElements = List<CanvasElement>.from(currentPage.elements)..removeWhere((e) => e.id == id)..add(el);
@@ -257,6 +319,7 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
   }
 
   void _sendToBack(String id) {
+    _recordHistory();
     final currentPage = _templateConfig.pages[_currentPageIndex];
     final el = currentPage.elements.firstWhere((e) => e.id == id, orElse: () => currentPage.elements.first);
     final updatedElements = [el, ...currentPage.elements.where((e) => e.id != id)];
@@ -281,15 +344,17 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
   }
 
   void _centerHorizontal(String id) {
+    _recordHistory();
     final currentPage = _templateConfig.pages[_currentPageIndex];
     final el = currentPage.elements.firstWhere((e) => e.id == id);
-    _updateElement(el.copyWith(x: ((1.0 - el.w) / 2.0).clamp(0.0, 1.0)));
+    _updateElement(el.copyWith(x: ((1.0 - el.w) / 2.0).clamp(0.0, 1.0)), recordUndo: false);
   }
 
   void _centerVertical(String id) {
+    _recordHistory();
     final currentPage = _templateConfig.pages[_currentPageIndex];
     final el = currentPage.elements.firstWhere((e) => e.id == id);
-    _updateElement(el.copyWith(y: ((1.0 - el.h) / 2.0).clamp(0.0, 1.0)));
+    _updateElement(el.copyWith(y: ((1.0 - el.h) / 2.0).clamp(0.0, 1.0)), recordUndo: false);
   }
 
   Future<void> _pickBackground() async {
@@ -298,6 +363,7 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
       allowedExtensions: ['png', 'jpg', 'jpeg'],
     );
     if (result != null && result.files.single.path != null) {
+      _recordHistory();
       final path = result.files.single.path!;
       final currentPage = _templateConfig.pages[_currentPageIndex];
       final updatedPages = List<TemplatePage>.from(_templateConfig.pages);
@@ -377,6 +443,106 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
       _snapLinesX = [];
       _snapLinesY = [];
     });
+  }
+
+  /// Keyboard Shortcuts Handler (Delete, Backspace, Ctrl+Z, Ctrl+Y, Ctrl+D, Arrows)
+  KeyEventResult _handleCanvasKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    // Do NOT intercept keys if typing in a text field
+    final primaryFocus = FocusManager.instance.primaryFocus;
+    final isTypingInField = primaryFocus != null &&
+        primaryFocus.context != null &&
+        primaryFocus.context!.widget is EditableText;
+
+    if (isTypingInField) return KeyEventResult.ignored;
+
+    // 1. Delete / Backspace: Delete selected canvas element
+    if (event.logicalKey == LogicalKeyboardKey.delete ||
+        event.logicalKey == LogicalKeyboardKey.backspace) {
+      if (_selectedElementId != null) {
+        _deleteElement(_selectedElementId!);
+        return KeyEventResult.handled;
+      }
+    }
+
+    // 2. Escape: Deselect current element
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_selectedElementId != null) {
+        setState(() => _selectedElementId = null);
+        return KeyEventResult.handled;
+      }
+    }
+
+    // 3. Ctrl-based Shortcuts
+    final isCtrl = HardwareKeyboard.instance.isControlPressed;
+    final isShift = HardwareKeyboard.instance.isShiftPressed;
+
+    if (isCtrl) {
+      if (event.logicalKey == LogicalKeyboardKey.keyZ) {
+        if (isShift) {
+          _redo();
+        } else {
+          _undo();
+        }
+        return KeyEventResult.handled;
+      } else if (event.logicalKey == LogicalKeyboardKey.keyY) {
+        _redo();
+        return KeyEventResult.handled;
+      } else if (event.logicalKey == LogicalKeyboardKey.keyD) {
+        if (_selectedElementId != null) {
+          final currentPage = _templateConfig.pages[_currentPageIndex];
+          final el = currentPage.elements.cast<CanvasElement?>().firstWhere(
+                (e) => e?.id == _selectedElementId,
+                orElse: () => null,
+              );
+          if (el != null) {
+            _duplicateElement(el);
+            return KeyEventResult.handled;
+          }
+        }
+      } else if (event.logicalKey == LogicalKeyboardKey.keyS) {
+        _saveProject();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Project layout saved!'),
+            backgroundColor: Color(0xFF059669),
+            duration: Duration(milliseconds: 1000),
+          ),
+        );
+        return KeyEventResult.handled;
+      }
+    }
+
+    // 4. Arrow Keys: Nudge position (1px normal, 10px with Shift)
+    if (_selectedElementId != null) {
+      final currentPage = _templateConfig.pages[_currentPageIndex];
+      final el = currentPage.elements.cast<CanvasElement?>().firstWhere(
+            (e) => e?.id == _selectedElementId,
+            orElse: () => null,
+          );
+      if (el != null) {
+        final stepPixels = isShift ? 10.0 : 1.0;
+        final stepX = stepPixels / currentPage.width;
+        final stepY = stepPixels / currentPage.height;
+
+        if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+          _updateElement(el.copyWith(x: (el.x - stepX).clamp(0.0, 1.0 - el.w)));
+          return KeyEventResult.handled;
+        } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+          _updateElement(el.copyWith(x: (el.x + stepX).clamp(0.0, 1.0 - el.w)));
+          return KeyEventResult.handled;
+        } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+          _updateElement(el.copyWith(y: (el.y - stepY).clamp(0.0, 1.0 - el.h)));
+          return KeyEventResult.handled;
+        } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          _updateElement(el.copyWith(y: (el.y + stepY).clamp(0.0, 1.0 - el.h)));
+          return KeyEventResult.handled;
+        }
+      }
+    }
+
+    return KeyEventResult.ignored;
   }
 
   Future<void> _handleImportSpreadsheet() async {
@@ -516,6 +682,54 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
     );
   }
 
+  void _zoomToFit() {
+    final currentPage = _templateConfig.pages[_currentPageIndex];
+    final media = MediaQuery.of(context).size;
+    double availWidth = media.width;
+    if (_isLeftDrawerExpanded) {
+      availWidth -= 340; // 68 rail + 272 tool drawer
+    } else {
+      availWidth -= 68;
+    }
+    if (_isRightPanelVisible) {
+      availWidth -= 320;
+    }
+    final availHeight = media.height - 180; // AppBar + preview bar + padding
+
+    final scaleX = (availWidth - 80) / currentPage.width;
+    final scaleY = (availHeight - 80) / currentPage.height;
+    final fitScale = math.min(scaleX, scaleY).clamp(0.25, 2.0);
+    setState(() => _zoomLevel = fitScale);
+  }
+
+  void _openDataTableEditor() {
+    showDialog(
+      context: context,
+      builder: (_) => CanvaBulkDataTableDialog(
+        initialHeaders: _datasetHeaders.isNotEmpty
+            ? _datasetHeaders
+            : ['Student_Name', 'Course_Name', 'Issue_Date', 'Certificate_Code', 'Student_Email'],
+        initialRows: _datasetRows,
+        onSave: (headers, rows) {
+          setState(() {
+            _datasetHeaders = headers;
+            _datasetRows = rows;
+            if (_currentRowIndex >= _datasetRows.length) {
+              _currentRowIndex = _datasetRows.isNotEmpty ? 0 : 0;
+            }
+          });
+          _saveProject();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Applied dataset: ${rows.length} rows, ${headers.length} columns'),
+              backgroundColor: const Color(0xFF059669),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   void _openBatchGenerator() {
     Navigator.push(
       context,
@@ -564,233 +778,278 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
           )
         : null;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF090D16),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0F172A),
-        elevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF06B6D4)]),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Text('CANVA STUDIO', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2, color: Colors.white)),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_project.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
-                Text(
-                  'Page ${_currentPageIndex + 1} of ${_templateConfig.pages.length} • ${currentPage.width.toInt()}x${currentPage.height.toInt()} px • ${currentPage.dpi} DPI',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+    return Focus(
+      focusNode: _canvasFocusNode,
+      autofocus: true,
+      onKeyEvent: _handleCanvasKeyEvent,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF090D16),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF0F172A),
+          elevation: 0,
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF06B6D4)]),
+                  borderRadius: BorderRadius.circular(6),
                 ),
-              ],
+                child: const Text('CANVA STUDIO', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2, color: Colors.white)),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_project.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                  Text(
+                    'Page ${_currentPageIndex + 1} of ${_templateConfig.pages.length} • ${currentPage.width.toInt()}x${currentPage.height.toInt()} px • ${currentPage.dpi} DPI',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            // Undo & Redo History Controls
+            IconButton(
+              icon: const Icon(Icons.undo, size: 20),
+              color: _undoStack.isNotEmpty ? Colors.white : Colors.white24,
+              onPressed: _undoStack.isNotEmpty ? _undo : null,
+              tooltip: 'Undo (Ctrl+Z)',
             ),
+            IconButton(
+              icon: const Icon(Icons.redo, size: 20),
+              color: _redoStack.isNotEmpty ? Colors.white : Colors.white24,
+              onPressed: _redoStack.isNotEmpty ? _redo : null,
+              tooltip: 'Redo (Ctrl+Y)',
+            ),
+            const VerticalDivider(color: Color(0xFF334155), indent: 12, endIndent: 12),
+
+            // Alignment Grid Toggle
+            IconButton(
+              icon: Icon(_showGrid ? Icons.grid_on : Icons.grid_off, size: 20, color: _showGrid ? const Color(0xFF38BDF8) : Colors.white54),
+              onPressed: () => setState(() => _showGrid = !_showGrid),
+              tooltip: _showGrid ? 'Hide Alignment Grid' : 'Show Alignment Grid (25px)',
+            ),
+
+            // Magnetic Snapping Toggle
+            IconButton(
+              icon: Icon(Icons.filter_center_focus, size: 20, color: _enableSnapping ? const Color(0xFFEC4899) : Colors.white54),
+              onPressed: () => setState(() => _enableSnapping = !_enableSnapping),
+              tooltip: _enableSnapping ? 'Magnetic Snapping Active' : 'Magnetic Snapping Disabled',
+            ),
+            const VerticalDivider(color: Color(0xFF334155), indent: 12, endIndent: 12),
+
+            // Zoom Controls
+            IconButton(
+              icon: const Icon(Icons.zoom_out, size: 20, color: Colors.white70),
+              onPressed: () => setState(() => _zoomLevel = (_zoomLevel - 0.1).clamp(0.4, 2.0)),
+              tooltip: 'Zoom Out',
+            ),
+            InkWell(
+              onTap: () => setState(() => _zoomLevel = 1.0),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+                child: Center(
+                  child: Text(
+                    '${(_zoomLevel * 100).toInt()}%',
+                    style: const TextStyle(fontSize: 12, color: Colors.white70, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.zoom_in, size: 20, color: Colors.white70),
+              onPressed: () => setState(() => _zoomLevel = (_zoomLevel + 0.1).clamp(0.4, 2.0)),
+              tooltip: 'Zoom In',
+            ),
+            IconButton(
+              icon: const Icon(Icons.fit_screen, size: 20, color: Color(0xFF38BDF8)),
+              onPressed: _zoomToFit,
+              tooltip: 'Fit Canvas to Screen',
+            ),
+            const VerticalDivider(color: Color(0xFF334155), indent: 12, endIndent: 12),
+
+            // Sidebar Visibility Toggles
+            IconButton(
+              icon: Icon(
+                _isLeftDrawerExpanded ? Icons.menu_open : Icons.menu,
+                size: 20,
+                color: _isLeftDrawerExpanded ? const Color(0xFF38BDF8) : Colors.white70,
+              ),
+              onPressed: () => setState(() => _isLeftDrawerExpanded = !_isLeftDrawerExpanded),
+              tooltip: _isLeftDrawerExpanded ? 'Collapse Left Drawer' : 'Expand Left Drawer',
+            ),
+            IconButton(
+              icon: Icon(
+                _isRightPanelVisible ? Icons.view_sidebar : Icons.view_sidebar_outlined,
+                size: 20,
+                color: _isRightPanelVisible ? const Color(0xFF38BDF8) : Colors.white54,
+              ),
+              onPressed: () => setState(() => _isRightPanelVisible = !_isRightPanelVisible),
+              tooltip: _isRightPanelVisible ? 'Hide Properties Panel' : 'Show Properties Panel',
+            ),
+            const VerticalDivider(color: Color(0xFF334155), indent: 12, endIndent: 12),
+
+            // Link Photos Folder
+            IconButton(
+              icon: Icon(
+                Icons.folder_shared_outlined,
+                size: 20,
+                color: _photosDirectory != null ? const Color(0xFFFBBF24) : Colors.white54,
+              ),
+              onPressed: _pickPhotosFolder,
+              tooltip: _photosDirectory != null ? 'Photos: $_photosDirectory' : 'Link Student Photos Directory',
+            ),
+
+            // Verification Landing Page Designer Trigger (Unique, non-duplicated)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.cloud_upload_outlined, size: 16, color: Color(0xFFF97316)),
+                label: const Text('Verification Page', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E293B),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: _openPrivacySettings,
+              ),
+            ),
+
+            // Quick Save Button
+            IconButton(
+              icon: const Icon(Icons.save_outlined, color: Color(0xFF34D399), size: 22),
+              onPressed: () {
+                _saveProject();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Project layout saved!'),
+                    backgroundColor: Color(0xFF059669),
+                    duration: Duration(milliseconds: 1200),
+                  ),
+                );
+              },
+              tooltip: 'Save Project (Ctrl+S)',
+            ),
+            const SizedBox(width: 8),
           ],
         ),
-        actions: [
-          // Alignment Grid Toggle
-          IconButton(
-            icon: Icon(_showGrid ? Icons.grid_on : Icons.grid_off, size: 20, color: _showGrid ? const Color(0xFF38BDF8) : Colors.white54),
-            onPressed: () => setState(() => _showGrid = !_showGrid),
-            tooltip: _showGrid ? 'Hide Alignment Grid' : 'Show Alignment Grid (25px)',
-          ),
-
-          // Magnetic Snapping Toggle
-          IconButton(
-            icon: Icon(Icons.filter_center_focus, size: 20, color: _enableSnapping ? const Color(0xFFEC4899) : Colors.white54),
-            onPressed: () => setState(() => _enableSnapping = !_enableSnapping),
-            tooltip: _enableSnapping ? 'Magnetic Snapping Active' : 'Magnetic Snapping Disabled',
-          ),
-          const VerticalDivider(color: Color(0xFF334155), indent: 12, endIndent: 12),
-
-          // Zoom Controls
-          IconButton(
-            icon: const Icon(Icons.zoom_out, size: 20, color: Colors.white70),
-            onPressed: () => setState(() => _zoomLevel = (_zoomLevel - 0.1).clamp(0.4, 2.0)),
-            tooltip: 'Zoom Out',
-          ),
-          InkWell(
-            onTap: () => setState(() => _zoomLevel = 1.0),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-              child: Center(
-                child: Text(
-                  '${(_zoomLevel * 100).toInt()}%',
-                  style: const TextStyle(fontSize: 12, color: Colors.white70, fontFamily: 'monospace', fontWeight: FontWeight.bold),
-                ),
-              ),
+        body: Column(
+          children: [
+            // Live Data Control Bar (Cleaned up: non-duplicated, focused on Data & Batch)
+            LivePreviewBar(
+              currentRowIndex: _currentRowIndex,
+              totalRows: _datasetRows.length,
+              isPreviewMode: _isPreviewMode,
+              onPrevRow: () => setState(() => _currentRowIndex--),
+              onNextRow: () => setState(() => _currentRowIndex++),
+              onTogglePreviewMode: (v) => setState(() => _isPreviewMode = v),
+              onImportDataset: _handleImportSpreadsheet,
+              onOpenDataTableEditor: _openDataTableEditor,
+              onStartBatch: _openBatchGenerator,
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.zoom_in, size: 20, color: Colors.white70),
-            onPressed: () => setState(() => _zoomLevel = (_zoomLevel + 0.1).clamp(0.4, 2.0)),
-            tooltip: 'Zoom In',
-          ),
-          const VerticalDivider(color: Color(0xFF334155), indent: 12, endIndent: 12),
 
-          // Link Photos Folder
-          IconButton(
-            icon: Icon(
-              Icons.folder_shared_outlined,
-              size: 20,
-              color: _photosDirectory != null ? const Color(0xFFFBBF24) : Colors.white54,
-            ),
-            onPressed: _pickPhotosFolder,
-            tooltip: _photosDirectory != null ? 'Photos: $_photosDirectory' : 'Link Student Photos Directory',
-          ),
+            // Interactive Visual Canvas Workspace (Left Nav + Viewport + Right Inspector)
+            Expanded(
+              child: Row(
+                children: [
+                  // Canva Left Icon Navigation Rail
+                  _buildCanvaLeftNavRail(),
 
-          // Verification Landing Page Designer Trigger
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.cloud_upload_outlined, size: 16, color: Color(0xFFF97316)),
-              label: const Text('Verification Page', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1E293B),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: _openPrivacySettings,
-            ),
-          ),
+                  // Canva Left Expanding Tool Drawer (Collapsible)
+                  if (_isLeftDrawerExpanded) _buildCanvaLeftToolDrawer(),
 
-          // Quick Save Button
-          IconButton(
-            icon: const Icon(Icons.save_outlined, color: Color(0xFF34D399), size: 22),
-            onPressed: () {
-              _saveProject();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Project layout saved!'),
-                  backgroundColor: Color(0xFF059669),
-                  duration: Duration(milliseconds: 1200),
-                ),
-              );
-            },
-            tooltip: 'Save Project',
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              // Live Data Control Bar
-              LivePreviewBar(
-                currentRowIndex: _currentRowIndex,
-                totalRows: _datasetRows.length,
-                isPreviewMode: _isPreviewMode,
-                onPrevRow: () => setState(() => _currentRowIndex--),
-                onNextRow: () => setState(() => _currentRowIndex++),
-                onTogglePreviewMode: (v) => setState(() => _isPreviewMode = v),
-                onImportDataset: _handleImportSpreadsheet,
-                onConfigurePrivacy: _openPrivacySettings,
-                onStartBatch: _openBatchGenerator,
-              ),
-
-              // Interactive Visual Canvas Workspace (Left Nav + Viewport + Right Inspector)
-              Expanded(
-                child: Row(
-                  children: [
-                    // Canva Left Icon Navigation Rail
-                    _buildCanvaLeftNavRail(),
-
-                    // Canva Left Expanding Tool Drawer
-                    _buildCanvaLeftToolDrawer(),
-
-                    // Central Canvas Viewport
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _selectedElementId = null),
-                        child: Container(
-                          color: const Color(0xFF0B0F19),
-                          child: Center(
+                  // Central Canvas Viewport
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        _canvasFocusNode.requestFocus();
+                        setState(() => _selectedElementId = null);
+                      },
+                      child: Container(
+                        color: const Color(0xFF0B0F19),
+                        child: Center(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
                             child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.vertical,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(40),
-                                  child: Transform.scale(
-                                    scale: _zoomLevel,
-                                    child: Container(
-                                      width: currentPage.width,
-                                      height: currentPage.height,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        boxShadow: const [
-                                          BoxShadow(color: Colors.black87, blurRadius: 28, offset: Offset(0, 10)),
-                                        ],
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Stack(
-                                        clipBehavior: Clip.none,
-                                        children: [
-                                          // Background Template Underlay
-                                          if (currentPage.backgroundAssetPath != null &&
-                                              File(currentPage.backgroundAssetPath!).existsSync())
-                                            Positioned.fill(
-                                              child: Image.file(
-                                                File(currentPage.backgroundAssetPath!),
-                                                fit: BoxFit.fill,
-                                              ),
-                                            )
-                                          else
-                                            Positioned.fill(
-                                              child: Container(
-                                                decoration: BoxDecoration(
-                                                  border: Border.all(color: const Color(0xFFD4AF37), width: 8),
-                                                  color: const Color(0xFFFAFAF9),
-                                                ),
-                                                child: const Center(
-                                                  child: Text(
-                                                    'Certificate Canvas Template',
-                                                    style: TextStyle(color: Colors.black26, fontSize: 28, fontWeight: FontWeight.bold),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-
-                                          // Render all interactive canvas elements
-                                          ...currentPage.elements.map((el) {
-                                            return CanvasElementWidget(
-                                              key: ValueKey(el.id),
-                                              element: el,
-                                              canvasWidth: currentPage.width,
-                                              canvasHeight: currentPage.height,
-                                              isSelected: _selectedElementId == el.id,
-                                              sampleData: sampleRow,
-                                              certCode: sampleRow != null ? 'CERT-2026-X89J' : null,
-                                              samplePhotoFile: samplePhoto,
-                                              onSelect: () => setState(() => _selectedElementId = el.id),
-                                              onElementChanged: (updated) => _updateElement(updated),
-                                              onDragUpdate: (rect) => _handleElementDrag(rect, el, currentPage),
-                                              onDragEnd: _handleDragEnd,
-                                              onOpenContextMenu: () {
-                                                setState(() => _contextMenuElement = el);
-                                              },
-                                            );
-                                          }),
-
-                                          // Magnetic Snapping Guidelines & Dot Grid Overlay
+                              scrollDirection: Axis.vertical,
+                              child: Padding(
+                                padding: const EdgeInsets.all(40),
+                                child: Transform.scale(
+                                  scale: _zoomLevel,
+                                  child: Container(
+                                    width: currentPage.width,
+                                    height: currentPage.height,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      boxShadow: const [
+                                        BoxShadow(color: Colors.black87, blurRadius: 28, offset: Offset(0, 10)),
+                                      ],
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        // Background Template Underlay
+                                        if (currentPage.backgroundAssetPath != null &&
+                                            File(currentPage.backgroundAssetPath!).existsSync())
                                           Positioned.fill(
-                                            child: AlignmentGuidelinesOverlay(
-                                              width: currentPage.width,
-                                              height: currentPage.height,
-                                              showGrid: _showGrid,
-                                              gridSize: 25.0,
-                                              snapLinesX: _snapLinesX,
-                                              snapLinesY: _snapLinesY,
+                                            child: Image.file(
+                                              File(currentPage.backgroundAssetPath!),
+                                              fit: BoxFit.fill,
+                                            ),
+                                          )
+                                        else
+                                          Positioned.fill(
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                border: Border.all(color: const Color(0xFFD4AF37), width: 8),
+                                                color: const Color(0xFFFAFAF9),
+                                              ),
+                                              child: const Center(
+                                                child: Text(
+                                                  'Certificate Canvas Template',
+                                                  style: TextStyle(color: Colors.black26, fontSize: 28, fontWeight: FontWeight.bold),
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                        ],
-                                      ),
+
+                                        // Render all interactive canvas elements
+                                        ...currentPage.elements.map((el) {
+                                          return CanvasElementWidget(
+                                            key: ValueKey(el.id),
+                                            element: el,
+                                            canvasWidth: currentPage.width,
+                                            canvasHeight: currentPage.height,
+                                            isSelected: _selectedElementId == el.id,
+                                            sampleData: sampleRow,
+                                            certCode: sampleRow != null ? 'CERT-2026-X89J' : null,
+                                            samplePhotoFile: samplePhoto,
+                                            onSelect: () {
+                                              _canvasFocusNode.requestFocus();
+                                              setState(() => _selectedElementId = el.id);
+                                            },
+                                            onElementChanged: (updated) => _updateElement(updated),
+                                            onDragUpdate: (rect) => _handleElementDrag(rect, el, currentPage),
+                                            onDragEnd: _handleDragEnd,
+                                          );
+                                        }),
+
+                                        // Magnetic Snapping Guidelines & Dot Grid Overlay
+                                        Positioned.fill(
+                                          child: AlignmentGuidelinesOverlay(
+                                            width: currentPage.width,
+                                            height: currentPage.height,
+                                            showGrid: _showGrid,
+                                            gridSize: 25.0,
+                                            snapLinesX: _snapLinesX,
+                                            snapLinesY: _snapLinesY,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -800,8 +1059,10 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
                         ),
                       ),
                     ),
+                  ),
 
-                    // Right Properties Inspector Panel (Always accessible Canva-style)
+                  // Right Properties Inspector Panel (Collapsible Canva-style)
+                  if (_isRightPanelVisible)
                     Container(
                       width: 320,
                       decoration: const BoxDecoration(
@@ -846,25 +1107,11 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
                         onPickBackground: _pickBackground,
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
-            ],
-          ),
-
-          // Context Menu Overlay when right-click is triggered
-          if (_contextMenuElement != null)
-            ContextMenuOverlay(
-              element: _contextMenuElement!,
-              availableHeaders: _datasetHeaders,
-              onElementUpdated: (updated) {
-                _updateElement(updated);
-                setState(() => _contextMenuElement = updated);
-              },
-              onDelete: () => _deleteElement(_contextMenuElement!.id),
-              onClose: () => setState(() => _contextMenuElement = null),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -890,7 +1137,7 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
             icon: Icons.dataset_outlined,
             activeIcon: Icons.dataset,
             label: 'Data',
-            badgeCount: _datasetHeaders.length > 0 ? _datasetHeaders.length : null,
+            badgeCount: _datasetHeaders.isNotEmpty ? _datasetHeaders.length : null,
           ),
           _buildNavRailItem(
             index: 2,
@@ -926,7 +1173,14 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
   }) {
     final isSelected = _activeLeftTabIndex == index;
     return InkWell(
-      onTap: () => setState(() => _activeLeftTabIndex = index),
+      onTap: () => setState(() {
+        if (_activeLeftTabIndex == index && _isLeftDrawerExpanded) {
+          _isLeftDrawerExpanded = false;
+        } else {
+          _activeLeftTabIndex = index;
+          _isLeftDrawerExpanded = true;
+        }
+      }),
       child: Container(
         width: 68,
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1111,12 +1365,19 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
             const Text('No Dataset Loaded', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             const Text(
-              'Import a Google Sheet or Excel file to drop dynamic columns directly onto the canvas.',
+              'Import a Google Sheet or Excel file, or enter data manually using the Canva Bulk Create table.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white38, fontSize: 11),
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
+              icon: const Icon(Icons.table_chart_outlined, size: 16),
+              label: const Text('Enter Data Manually', style: TextStyle(fontSize: 12)),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E3A8A)),
+              onPressed: _openDataTableEditor,
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
               icon: const Icon(Icons.cloud_download_outlined, size: 16),
               label: const Text('Import Google Sheet', style: TextStyle(fontSize: 12)),
               onPressed: _handleImportSpreadsheet,
@@ -1129,6 +1390,18 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        // Canva Bulk Create Table Editor Button
+        OutlinedButton.icon(
+          icon: const Icon(Icons.edit_note, size: 16, color: Color(0xFF38BDF8)),
+          label: Text('Edit Table (${_datasetRows.length} Rows, ${_datasetHeaders.length} Cols)', style: const TextStyle(fontSize: 11, color: Color(0xFF38BDF8), fontWeight: FontWeight.bold)),
+          onPressed: _openDataTableEditor,
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: Color(0xFF38BDF8)),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        const SizedBox(height: 12),
         const Text(
           'CLICK COLUMN TO ADD TO CANVAS',
           style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.8),
@@ -1236,12 +1509,15 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline, size: 14, color: Colors.redAccent),
-                  tooltip: 'Delete',
+                  tooltip: 'Delete (Del / Backspace)',
                   onPressed: () => _deleteElement(el.id),
                 ),
               ],
             ),
-            onTap: () => setState(() => _selectedElementId = el.id),
+            onTap: () {
+              _canvasFocusNode.requestFocus();
+              setState(() => _selectedElementId = el.id);
+            },
           ),
         );
       },
@@ -1287,6 +1563,7 @@ class _VisualCanvasViewState extends State<VisualCanvasView> {
             icon: const Icon(Icons.clear, size: 16, color: Colors.redAccent),
             label: const Text('Remove Background', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
             onPressed: () {
+              _recordHistory();
               final updatedPages = List<TemplatePage>.from(_templateConfig.pages);
               updatedPages[_currentPageIndex] = TemplatePage(
                 pageNumber: currentPage.pageNumber,

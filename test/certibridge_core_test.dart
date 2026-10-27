@@ -12,6 +12,8 @@ import 'package:certibridge/services/project/project_export_service.dart';
 import 'package:certibridge/services/project/project_import_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('Phase 1: Project & Bundle Serialization', () {
     test('ProjectModel JSON serialization and deserialization', () {
       final now = DateTime.now();
@@ -58,11 +60,20 @@ void main() {
 
       expect(slug.startsWith('CERT-2026-'), isTrue);
       final randomPart = slug.replaceFirst('CERT-2026-', '');
-      expect(randomPart.length, 6);
+      expect(randomPart.length >= 32, isTrue);
+      expect(randomPart.length, 40);
       expect(randomPart.contains('0'), isFalse);
       expect(randomPart.contains('1'), isFalse);
       expect(randomPart.contains('I'), isFalse);
       expect(randomPart.contains('O'), isFalse);
+
+      final hmacSlug = generator.generateCryptographicHmacSlug(
+        certId: 'rec_1001',
+        studentName: 'Aung Kyaw',
+        courseName: 'Machine Learning',
+      );
+      expect(hmacSlug.startsWith('CERT-'), isTrue);
+      expect(hmacSlug.length, greaterThan(64));
     });
   });
 
@@ -165,6 +176,9 @@ void main() {
         emailColumns: ['Student_Name'],
         themePreset: 'emerald',
         allowPrint: true,
+        allowVerifierEmail: true,
+        enableRateLimiting: true,
+        slugEntropyLength: 40,
         badgeText: 'VERIFIED CREDENTIAL',
         headlineText: 'Official Completion Certificate',
         footerText: 'Issued by CertiBridge Engine',
@@ -175,6 +189,9 @@ void main() {
 
       expect(restored.themePreset, 'emerald');
       expect(restored.allowPrint, isTrue);
+      expect(restored.allowVerifierEmail, isTrue);
+      expect(restored.enableRateLimiting, isTrue);
+      expect(restored.slugEntropyLength, 40);
       expect(restored.badgeText, 'VERIFIED CREDENTIAL');
       expect(restored.headlineText, 'Official Completion Certificate');
       expect(restored.footerText, 'Issued by CertiBridge Engine');

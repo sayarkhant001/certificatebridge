@@ -54,7 +54,7 @@ class CloudflareAuthService {
       'response_type': 'code',
       'client_id': _cfOAuthClientId,
       'redirect_uri': _cfOAuthRedirectUri,
-      'scope': 'account:read user:read workers:write workers_kv:write workers_routes:write',
+      'scope': 'account:read user:read workers:write workers_kv:write workers_routes:write zone:read',
       'code_challenge': codeChallenge,
       'code_challenge_method': 'S256',
       'state': state,

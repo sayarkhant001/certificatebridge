@@ -130,6 +130,11 @@ class AppsScriptService {
         final sheets = data['sheets'] as List<dynamic>? ?? [];
         return sheets.map((s) => Map<String, dynamic>.from(s as Map)).toList();
       } else {
+        final err = data['error']?.toString() ?? '';
+        if (err.contains('Unrecognized action')) {
+          // Gracefully fallback to default sheet tab for older Apps Script deployments
+          return [{'name': 'Default Sheet', 'sheet_id': 0, 'rows': 0, 'cols': 0}];
+        }
         throw Exception(data['error'] ?? 'Failed to list spreadsheet tabs.');
       }
     } else {

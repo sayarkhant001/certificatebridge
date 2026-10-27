@@ -8,7 +8,8 @@ class LivePreviewBar extends StatelessWidget {
   final VoidCallback onNextRow;
   final ValueChanged<bool> onTogglePreviewMode;
   final VoidCallback onImportDataset;
-  final VoidCallback onConfigurePrivacy;
+  final VoidCallback? onOpenDataTableEditor;
+  final VoidCallback? onConfigurePrivacy;
   final VoidCallback onStartBatch;
 
   const LivePreviewBar({
@@ -20,7 +21,8 @@ class LivePreviewBar extends StatelessWidget {
     required this.onNextRow,
     required this.onTogglePreviewMode,
     required this.onImportDataset,
-    required this.onConfigurePrivacy,
+    this.onOpenDataTableEditor,
+    this.onConfigurePrivacy,
     required this.onStartBatch,
   }) : super(key: key);
 
@@ -40,7 +42,7 @@ class LivePreviewBar extends StatelessWidget {
             onPressed: onImportDataset,
             icon: const Icon(Icons.table_chart_outlined, size: 16, color: Color(0xFF34D399)),
             label: Text(
-              totalRows > 0 ? '$totalRows Records Loaded' : 'Import Excel / Sheets',
+              totalRows > 0 ? '$totalRows Records' : 'Import Excel / Sheets',
               style: TextStyle(
                 fontSize: 12,
                 color: totalRows > 0 ? const Color(0xFF34D399) : Colors.white70,
@@ -52,6 +54,18 @@ class LivePreviewBar extends StatelessWidget {
               side: BorderSide(
                 color: totalRows > 0 ? const Color(0xFF059669) : const Color(0xFF475569),
               ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Canva Bulk Create Table Editor Button
+          IconButton(
+            onPressed: onOpenDataTableEditor,
+            icon: const Icon(Icons.edit_note, size: 20, color: Color(0xFF38BDF8)),
+            tooltip: 'Canva Bulk Create: Edit Data Table Manually',
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFF0F172A),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: const BorderSide(color: Color(0xFF334155))),
             ),
           ),
           const SizedBox(width: 14),
@@ -100,14 +114,6 @@ class LivePreviewBar extends StatelessWidget {
           ],
 
           const Spacer(),
-
-          // Privacy Visibility & Public Columns
-          TextButton.icon(
-            onPressed: onConfigurePrivacy,
-            icon: const Icon(Icons.security_outlined, size: 16, color: Color(0xFF60A5FA)),
-            label: const Text('Privacy & Display Rules', style: TextStyle(fontSize: 12, color: Color(0xFF60A5FA))),
-          ),
-          const SizedBox(width: 10),
 
           // Batch Generation Engine
           ElevatedButton.icon(

@@ -52,41 +52,49 @@ class FontManager {
   Future<void> initialize({List<String>? additionalDirectories}) async {
     _registerDefaultFonts();
 
-    if (kIsWeb) {
-      try {
-        final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-        final assets = manifest.listAssets();
-        for (final assetPath in assets) {
-          if (assetPath.startsWith('assets/fonts/') &&
-              (assetPath.endsWith('.ttf') || assetPath.endsWith('.otf'))) {
-            final filename = p.basenameWithoutExtension(assetPath);
-            final family = _cleanFamilyName(filename);
-            final category = _categorizeFontByPath(assetPath, family);
-            _addFont(AppFontInfo(
-              name: family,
-              family: family,
-              category: category,
-              path: assetPath,
-              isAsset: true,
-            ));
-          }
+    // 1. Load from Flutter AssetManifest across all platforms (Web and Desktop)
+    try {
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      final assets = manifest.listAssets();
+      for (final assetPath in assets) {
+        if (assetPath.startsWith('assets/fonts/') &&
+            (assetPath.endsWith('.ttf') || assetPath.endsWith('.otf'))) {
+          final filename = p.basenameWithoutExtension(assetPath);
+          final family = _cleanFamilyName(filename);
+          final category = _categorizeFontByPath(assetPath, family);
+          _addFont(AppFontInfo(
+            name: family,
+            family: family,
+            category: category,
+            path: assetPath,
+            isAsset: true,
+          ));
         }
-      } catch (_) {
-        // Fallback gracefully on web
       }
-      return;
+    } catch (e) {
+      debugPrint('AssetManifest font loading note: $e');
     }
 
-    // Automatically scan the bundled asset font directories on the filesystem
-    final defaultAssetDirs = [
-      'assets/fonts/Myanmar_Unicode',
-      'assets/fonts/Myanmar_WinFonts',
-      'assets/fonts/English',
-      'assets/fonts',
-    ];
+    // 2. Also scan disk paths on native desktop
+    if (!kIsWeb) {
+      final possibleDirs = <String>[
+        'assets/fonts/Myanmar_Unicode',
+        'assets/fonts/Myanmar_WinFonts',
+        'assets/fonts/English',
+        'assets/fonts',
+      ];
+      try {
+        final exeDir = p.dirname(Platform.resolvedExecutable);
+        possibleDirs.add(p.join(exeDir, 'data', 'flutter_assets', 'assets', 'fonts', 'Myanmar_Unicode'));
+        possibleDirs.add(p.join(exeDir, 'data', 'flutter_assets', 'assets', 'fonts', 'Myanmar_WinFonts'));
+        possibleDirs.add(p.join(exeDir, 'data', 'flutter_assets', 'assets', 'fonts', 'English'));
+        possibleDirs.add(p.join(exeDir, 'data', 'flutter_assets', 'assets', 'fonts'));
+        possibleDirs.add(p.join(Directory.current.path, 'assets', 'fonts'));
+      } catch (_) {}
 
-    for (final dir in defaultAssetDirs) {
-      await scanDirectory(dir);
+      for (final dir in possibleDirs) {
+        await scanDirectory(dir);
+      }
     }
 
     // Scan additional directories if provided
@@ -95,6 +103,27 @@ class FontManager {
         await scanDirectory(dir);
       }
     }
+  }
+
+  /// Ensure font is registered dynamically with Flutter's FontLoader runtime
+  Future<void> ensureFontLoaded(AppFontInfo font) async {
+    if (_loadedFontFamilies.contains(font.family)) return;
+    try {
+      final fontLoader = FontLoader(font.family);
+      if (font.isAsset) {
+        fontLoader.addFont(rootBundle.load(font.path));
+      } else {
+        final file = File(font.path);
+        if (await file.exists()) {
+          final bytes = await file.readAsBytes();
+          fontLoader.addFont(Future.value(ByteData.view(bytes.buffer)));
+        } else {
+          return;
+        }
+      }
+      await fontLoader.load();
+      _loadedFontFamilies.add(font.family);
+    } catch (_) {}
   }
 
   void _registerDefaultFonts() {
