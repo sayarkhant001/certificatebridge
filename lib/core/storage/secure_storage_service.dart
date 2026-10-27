@@ -5,7 +5,10 @@ class SecureStorageService {
   static const String _keyGoogleAccessToken = 'sec_google_access_token';
   static const String _keyGoogleRefreshToken = 'sec_google_refresh_token';
   static const String _keyGoogleTokenExpiry = 'sec_google_token_expiry';
+  static const String _keyGoogleClientId = 'sec_google_client_id';
+  static const String _keyGoogleClientSecret = 'sec_google_client_secret';
   static const String _keyCloudflareAccountId = 'sec_cloudflare_account_id';
+  static const String _keyCloudflareAccountName = 'sec_cloudflare_account_name';
   static const String _keyCloudflareApiToken = 'sec_cloudflare_api_token';
   static const String _keyCloudflareKvId = 'sec_cloudflare_kv_id';
   static const String _keyCloudflareWorkerUrl = 'sec_cloudflare_worker_url';
@@ -61,6 +64,31 @@ class SecureStorageService {
     return _decrypt(val);
   }
 
+  Future<void> saveGoogleClientConfig({
+    required String clientId,
+    String? clientSecret,
+  }) async {
+    final prefs = await _prefs;
+    await prefs.setString(_keyGoogleClientId, _encrypt(clientId));
+    if (clientSecret != null && clientSecret.isNotEmpty) {
+      await prefs.setString(_keyGoogleClientSecret, _encrypt(clientSecret));
+    }
+  }
+
+  Future<String?> getGoogleClientId() async {
+    final prefs = await _prefs;
+    final val = prefs.getString(_keyGoogleClientId);
+    if (val == null) return null;
+    return _decrypt(val);
+  }
+
+  Future<String?> getGoogleClientSecret() async {
+    final prefs = await _prefs;
+    final val = prefs.getString(_keyGoogleClientSecret);
+    if (val == null) return null;
+    return _decrypt(val);
+  }
+
   Future<bool> isGoogleTokenExpired() async {
     final prefs = await _prefs;
     final val = prefs.getString(_keyGoogleTokenExpiry);
@@ -74,12 +102,16 @@ class SecureStorageService {
   Future<void> saveCloudflareCredentials({
     required String accountId,
     required String apiToken,
+    String? accountName,
     String? kvNamespaceId,
     String? workerUrl,
   }) async {
     final prefs = await _prefs;
     await prefs.setString(_keyCloudflareAccountId, _encrypt(accountId));
     await prefs.setString(_keyCloudflareApiToken, _encrypt(apiToken));
+    if (accountName != null) {
+      await prefs.setString(_keyCloudflareAccountName, _encrypt(accountName));
+    }
     if (kvNamespaceId != null) {
       await prefs.setString(_keyCloudflareKvId, _encrypt(kvNamespaceId));
     }
@@ -91,12 +123,14 @@ class SecureStorageService {
   Future<Map<String, String?>> getCloudflareCredentials() async {
     final prefs = await _prefs;
     final accountIdRaw = prefs.getString(_keyCloudflareAccountId);
+    final accountNameRaw = prefs.getString(_keyCloudflareAccountName);
     final apiTokenRaw = prefs.getString(_keyCloudflareApiToken);
     final kvIdRaw = prefs.getString(_keyCloudflareKvId);
     final workerUrlRaw = prefs.getString(_keyCloudflareWorkerUrl);
 
     return {
       'accountId': accountIdRaw != null ? _decrypt(accountIdRaw) : null,
+      'accountName': accountNameRaw != null ? _decrypt(accountNameRaw) : null,
       'apiToken': apiTokenRaw != null ? _decrypt(apiTokenRaw) : null,
       'kvNamespaceId': kvIdRaw != null ? _decrypt(kvIdRaw) : null,
       'workerUrl': workerUrlRaw != null ? _decrypt(workerUrlRaw) : null,

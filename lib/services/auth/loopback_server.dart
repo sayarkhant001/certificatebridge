@@ -32,7 +32,7 @@ class LoopbackAuthServer {
     _server!.listen((HttpRequest request) async {
       final uri = request.uri;
 
-      if (uri.path == '/callback') {
+      if (uri.path == '/callback' || uri.path == '/oauth/callback') {
         final queryParams = uri.queryParameters;
 
         request.response.statusCode = HttpStatus.ok;

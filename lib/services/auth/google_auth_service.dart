@@ -20,11 +20,12 @@ class GoogleAuthService {
     'https://www.googleapis.com/auth/spreadsheets',
   ];
 
-  // Default client ID for desktop/installed app (or user can provide their own GCP Client ID)
-  String _clientId = 'certibridge-desktop-client.apps.googleusercontent.com';
+  String? _clientId;
+  String? _clientSecret;
 
-  void setCustomClientId(String clientId) {
+  void setCustomClientId(String clientId, [String? clientSecret]) {
     _clientId = clientId;
+    _clientSecret = clientSecret;
   }
 
   /// Generate cryptographically secure PKCE code verifier
@@ -42,7 +43,20 @@ class GoogleAuthService {
   }
 
   /// Executes the 1-Click PKCE OAuth Loopback flow
-  Future<bool> authenticate() async {
+  Future<bool> authenticate({String? customClientId, String? customClientSecret}) async {
+    final clientId = customClientId ?? _clientId ?? await _storage.getGoogleClientId();
+    final clientSecret = customClientSecret ?? _clientSecret ?? await _storage.getGoogleClientSecret();
+
+    if (clientId == null || clientId.trim().isEmpty) {
+      throw Exception(
+        'Please enter your Google OAuth Client ID, or use the Google Apps Script Web App for zero-config setup.',
+      );
+    }
+
+    _clientId = clientId.trim();
+    _clientSecret = clientSecret?.trim();
+    await _storage.saveGoogleClientConfig(clientId: _clientId!, clientSecret: _clientSecret);
+
     final codeVerifier = _generateCodeVerifier();
     final codeChallenge = _generateCodeChallenge(codeVerifier);
     final state = _generateCodeVerifier().substring(0, 16);
@@ -85,7 +99,8 @@ class GoogleAuthService {
       Uri.parse(_tokenEndpoint),
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {
-        'client_id': _clientId,
+        'client_id': _clientId!,
+        if (_clientSecret != null && _clientSecret!.isNotEmpty) 'client_secret': _clientSecret!,
         'code': code,
         'code_verifier': codeVerifier,
         'grant_type': 'authorization_code',
