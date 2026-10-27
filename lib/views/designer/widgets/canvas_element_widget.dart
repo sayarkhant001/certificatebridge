@@ -14,6 +14,9 @@ class CanvasElementWidget extends StatefulWidget {
   final VoidCallback onSelect;
   final ValueChanged<CanvasElement> onElementChanged;
   final VoidCallback onOpenContextMenu;
+  final Function(Rect currentRect)? onDragUpdate;
+  final VoidCallback? onDragEnd;
+  final VoidCallback? onDoubleTap;
 
   const CanvasElementWidget({
     Key? key,
@@ -27,6 +30,9 @@ class CanvasElementWidget extends StatefulWidget {
     required this.onSelect,
     required this.onElementChanged,
     required this.onOpenContextMenu,
+    this.onDragUpdate,
+    this.onDragEnd,
+    this.onDoubleTap,
   }) : super(key: key);
 
   @override
@@ -39,9 +45,14 @@ class _CanvasElementWidgetState extends State<CanvasElementWidget> {
   late double _width;
   late double _height;
 
+  bool _isInlineEditing = false;
+  late TextEditingController _inlineTextCtrl;
+  final FocusNode _inlineFocusNode = FocusNode();
+
   @override
   void initState() {
     super.initState();
+    _inlineTextCtrl = TextEditingController(text: widget.element.text);
     _recalculatePositions();
   }
 
@@ -52,6 +63,58 @@ class _CanvasElementWidgetState extends State<CanvasElementWidget> {
         oldWidget.canvasHeight != widget.canvasHeight ||
         oldWidget.element != widget.element) {
       _recalculatePositions();
+      if (!_isInlineEditing && oldWidget.element.text != widget.element.text) {
+        _inlineTextCtrl.text = widget.element.text;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _inlineTextCtrl.dispose();
+    _inlineFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _startInlineEditing() {
+    if (widget.element.type == CanvasElementType.text) {
+      setState(() {
+        _isInlineEditing = true;
+        _inlineTextCtrl.text = widget.element.text;
+        _inlineTextCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _inlineTextCtrl.text.length);
+      });
+      _inlineFocusNode.requestFocus();
+    }
+    if (widget.onDoubleTap != null) {
+      widget.onDoubleTap!();
+    }
+  }
+
+  void _finishInlineEditing() {
+    if (_isInlineEditing) {
+      setState(() => _isInlineEditing = false);
+      widget.onElementChanged(widget.element.copyWith(text: _inlineTextCtrl.text));
+    }
+  }
+
+  static Color _parseColor(String hex) {
+    try {
+      final clean = hex.replaceAll('#', '');
+      return Color(int.parse('FF$clean', radix: 16));
+    } catch (_) {
+      return Colors.black;
+    }
+  }
+
+  static TextAlign _getTextAlign(TextAlignment align) {
+    switch (align) {
+      case TextAlignment.left:
+        return TextAlign.left;
+      case TextAlignment.right:
+        return TextAlign.right;
+      case TextAlignment.center:
+      default:
+        return TextAlign.center;
     }
   }
 
@@ -86,37 +149,83 @@ class _CanvasElementWidgetState extends State<CanvasElementWidget> {
       width: _width,
       height: _height,
       child: GestureDetector(
-        onTap: widget.onSelect,
+        onTap: () {
+          if (_isInlineEditing) {
+            _finishInlineEditing();
+          }
+          widget.onSelect();
+        },
+        onDoubleTap: _startInlineEditing,
         onSecondaryTapUp: (_) => widget.onOpenContextMenu(), // Windows Mouse Right-Click
         onLongPressStart: (_) => widget.onOpenContextMenu(), // Android Long-Press
-        onPanUpdate: (details) {
-          setState(() {
-            _left += details.delta.dx;
-            _top += details.delta.dy;
-          });
-        },
-        onPanEnd: (_) => _commitPosition(),
+        onPanUpdate: _isInlineEditing
+            ? null
+            : (details) {
+                setState(() {
+                  _left += details.delta.dx;
+                  _top += details.delta.dy;
+                });
+                if (widget.onDragUpdate != null) {
+                  widget.onDragUpdate!(Rect.fromLTWH(_left, _top, _width, _height));
+                }
+              },
+        onPanEnd: _isInlineEditing
+            ? null
+            : (_) {
+                if (widget.onDragEnd != null) {
+                  widget.onDragEnd!();
+                }
+                _commitPosition();
+              },
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // Element Content
+            // Element Content or Inline Text Editor
             Container(
+              width: _width,
+              height: _height,
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: widget.isSelected ? const Color(0xFF2563EB) : Colors.transparent,
-                  width: 1.5,
+                  color: widget.isSelected
+                      ? const Color(0xFF2563EB)
+                      : (_isInlineEditing ? const Color(0xFF38BDF8) : Colors.transparent),
+                  width: widget.isSelected ? 1.5 : 1.0,
                 ),
                 borderRadius: BorderRadius.circular(2),
+                color: _isInlineEditing ? Colors.white.withOpacity(0.9) : Colors.transparent,
               ),
-              child: CanvasRenderer.buildElementWidget(
-                element: widget.element,
-                canvasWidth: widget.canvasWidth,
-                canvasHeight: widget.canvasHeight,
-                sampleData: widget.sampleData,
-                certCode: widget.certCode,
-                samplePhotoFile: widget.samplePhotoFile,
-                isSelected: false,
-              ),
+              child: _isInlineEditing
+                  ? Center(
+                      child: TextField(
+                        controller: _inlineTextCtrl,
+                        focusNode: _inlineFocusNode,
+                        autofocus: true,
+                        maxLines: null,
+                        textAlign: _getTextAlign(widget.element.textAlign),
+                        style: TextStyle(
+                          fontFamily: widget.element.fontFamily,
+                          fontSize: widget.element.fontSize,
+                          color: _parseColor(widget.element.colorHex),
+                          fontWeight: widget.element.isBold ? FontWeight.bold : FontWeight.normal,
+                          fontStyle: widget.element.isItalic ? FontStyle.italic : FontStyle.normal,
+                        ),
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        ),
+                        onSubmitted: (_) => _finishInlineEditing(),
+                        onTapOutside: (_) => _finishInlineEditing(),
+                      ),
+                    )
+                  : CanvasRenderer.buildElementContent(
+                      element: widget.element,
+                      boxWidth: _width,
+                      boxHeight: _height,
+                      sampleData: widget.sampleData,
+                      certCode: widget.certCode,
+                      samplePhotoFile: widget.samplePhotoFile,
+                    ),
             ),
 
             // Resize handle on bottom-right corner when selected

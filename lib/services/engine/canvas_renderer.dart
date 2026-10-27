@@ -19,19 +19,14 @@ class CanvasRenderer {
     final width = element.w * canvasWidth;
     final height = element.h * canvasHeight;
 
-    Widget child;
-
-    switch (element.type) {
-      case CanvasElementType.text:
-        child = _buildText(element, sampleData, certCode, width, height);
-        break;
-      case CanvasElementType.photo:
-        child = _buildPhoto(element, samplePhotoFile, width, height);
-        break;
-      case CanvasElementType.qr:
-        child = _buildQr(element, certCode, width, height);
-        break;
-    }
+    Widget child = buildElementContent(
+      element: element,
+      boxWidth: width,
+      boxHeight: height,
+      sampleData: sampleData,
+      certCode: certCode,
+      samplePhotoFile: samplePhotoFile,
+    );
 
     return Positioned(
       left: left,
@@ -48,6 +43,25 @@ class CanvasRenderer {
         child: child,
       ),
     );
+  }
+
+  /// Returns the internal content widget (Text, Photo, or QR) without wrapping in Positioned
+  static Widget buildElementContent({
+    required CanvasElement element,
+    required double boxWidth,
+    required double boxHeight,
+    Map<String, dynamic>? sampleData,
+    String? certCode,
+    File? samplePhotoFile,
+  }) {
+    switch (element.type) {
+      case CanvasElementType.text:
+        return _buildText(element, sampleData, certCode, boxWidth, boxHeight);
+      case CanvasElementType.photo:
+        return _buildPhoto(element, samplePhotoFile, boxWidth, boxHeight);
+      case CanvasElementType.qr:
+        return _buildQr(element, certCode, boxWidth, boxHeight);
+    }
   }
 
   static Widget _buildText(

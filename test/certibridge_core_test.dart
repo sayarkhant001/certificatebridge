@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:certibridge/models/certificate_record.dart';
 import 'package:certibridge/models/display_config.dart';
@@ -5,6 +7,8 @@ import 'package:certibridge/models/project_model.dart';
 import 'package:certibridge/models/template_config.dart';
 import 'package:certibridge/services/cloudflare/kv_sync_service.dart';
 import 'package:certibridge/services/engine/batch_generator.dart';
+import 'package:certibridge/services/engine/font_manager.dart';
+import 'package:certibridge/services/project/project_export_service.dart';
 import 'package:certibridge/services/project/project_import_service.dart';
 
 void main() {
@@ -103,4 +107,99 @@ void main() {
       expect(fields.containsKey('Phone_Number'), isFalse);
     });
   });
+
+  group('Phase 5: Domain Isolation & Export Sanitization', () {
+    test('Project export bundle strictly strips custom domains to prevent conflicts between users', () async {
+      final exportService = ProjectExportService();
+      final originalConfig = DisplayConfig(
+        publicColumns: ['Student_Name', 'Course_Name'],
+        emailColumns: ['Student_Name', 'Course_Name'],
+        institutionName: 'Stanford Engineering',
+        customDomain: 'verify.stanford.edu',
+        customSubdomain: 'stanford-badges',
+        themePreset: 'sapphire',
+        headlineText: 'Official Academic Credential',
+        badgeText: 'INSTITUTIONALLY VERIFIED',
+      );
+
+      final project = ProjectModel(
+        id: 'proj_stanford_1',
+        name: 'Diploma Batch',
+        description: 'Engineering diplomas',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        totalCertificates: 50,
+        layoutJson: '{"version": 1}',
+        displayConfigJson: originalConfig.toJson(),
+      );
+
+      final bundleBytes = await exportService.exportBundle(
+        project: project,
+        templatePages: [],
+        usedFonts: [],
+      );
+
+      expect(bundleBytes, isNotEmpty);
+
+      // Verify the archive contains display_config.json with stripped custom domains
+      final archive = ZipDecoder().decodeBytes(bundleBytes);
+      final configFile = archive.findFile('display_config.json');
+      expect(configFile, isNotNull);
+
+      final configJsonStr = utf8.decode(configFile!.content as List<int>);
+      final exportedConfig = DisplayConfig.fromJson(configJsonStr);
+
+      expect(exportedConfig.institutionName, 'Stanford Engineering');
+      expect(exportedConfig.themePreset, 'sapphire');
+      expect(exportedConfig.headlineText, 'Official Academic Credential');
+      // Crucial: Domain and subdomain must be sanitized / null!
+      expect(exportedConfig.customDomain, isNull);
+      expect(exportedConfig.customSubdomain, isNull);
+    });
+  });
+
+  group('Phase 6: Multi-Tab Sheets & Categorized Font Manager', () {
+    test('DisplayConfig correctly persists themePreset, allowPrint, and badgeText', () {
+      final config = DisplayConfig(
+        publicColumns: ['Student_Name'],
+        emailColumns: ['Student_Name'],
+        themePreset: 'emerald',
+        allowPrint: true,
+        badgeText: 'VERIFIED CREDENTIAL',
+        headlineText: 'Official Completion Certificate',
+        footerText: 'Issued by CertiBridge Engine',
+      );
+
+      final json = config.toJson();
+      final restored = DisplayConfig.fromJson(json);
+
+      expect(restored.themePreset, 'emerald');
+      expect(restored.allowPrint, isTrue);
+      expect(restored.badgeText, 'VERIFIED CREDENTIAL');
+      expect(restored.headlineText, 'Official Completion Certificate');
+      expect(restored.footerText, 'Issued by CertiBridge Engine');
+    });
+
+    test('FontManager initializes and categorizes fonts into Myanmar Unicode, Win, and English', () async {
+      final fontManager = FontManager();
+      await fontManager.initialize();
+
+      expect(fontManager.availableFonts, isNotEmpty);
+      expect(fontManager.myanmarUnicodeFonts, isNotEmpty);
+      expect(fontManager.myanmarWinFonts, isNotEmpty);
+      expect(fontManager.englishFonts, isNotEmpty);
+
+      // Verify categories
+      for (final f in fontManager.myanmarUnicodeFonts) {
+        expect(f.category, FontCategory.myanmarUnicode);
+      }
+      for (final f in fontManager.myanmarWinFonts) {
+        expect(f.category, FontCategory.myanmarWin);
+      }
+      for (final f in fontManager.englishFonts) {
+        expect(f.category, FontCategory.english);
+      }
+    });
+  });
 }
+

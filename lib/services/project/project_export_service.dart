@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
+import '../../models/display_config.dart';
 import '../../models/project_model.dart';
 
 class ProjectExportService {
@@ -25,12 +26,16 @@ class ProjectExportService {
     archive.addFile(
         ArchiveFile('manifest.json', manifestBytes.length, manifestBytes));
 
-    // 2. Layout & Display Settings
+    // 2. Layout & Display Settings (Sanitize custom domain on export to avoid conflicts)
     final layoutBytes = utf8.encode(project.layoutJson);
     archive.addFile(
         ArchiveFile('layout.json', layoutBytes.length, layoutBytes));
 
-    final configBytes = utf8.encode(project.displayConfigJson);
+    final configObj = DisplayConfig.fromJson(project.displayConfigJson);
+    final configMap = configObj.toMap();
+    configMap['custom_domain'] = null;
+    configMap['custom_subdomain'] = null;
+    final configBytes = utf8.encode(jsonEncode(configMap));
     archive.addFile(
         ArchiveFile('display_config.json', configBytes.length, configBytes));
 

@@ -61,7 +61,7 @@ class FontManager {
               (assetPath.endsWith('.ttf') || assetPath.endsWith('.otf'))) {
             final filename = p.basenameWithoutExtension(assetPath);
             final family = _cleanFamilyName(filename);
-            final category = _categorizeFont(assetPath);
+            final category = _categorizeFontByPath(assetPath, family);
             _addFont(AppFontInfo(
               name: family,
               family: family,
@@ -177,7 +177,7 @@ class FontManager {
       await fontLoader.load();
       _loadedFontFamilies.add(family);
 
-      final category = _categorizeFont(family);
+      final category = _categorizeFontByPath(fontFile.path, family);
       _addFont(AppFontInfo(
         name: family,
         family: family,
@@ -212,15 +212,30 @@ class FontManager {
     }
   }
 
-  FontCategory _categorizeFont(String name) {
+  FontCategory _categorizeFontByPath(String path, String name) {
+    final pathNormalized = path.replaceAll('\\', '/').toLowerCase();
+    if (pathNormalized.contains('myanmar_unicode')) {
+      return FontCategory.myanmarUnicode;
+    }
+    if (pathNormalized.contains('myanmar_winfonts') || pathNormalized.contains('winfonts')) {
+      return FontCategory.myanmarWin;
+    }
+    if (pathNormalized.contains('english')) {
+      return FontCategory.english;
+    }
+
     final lower = name.toLowerCase();
-    if (lower.contains('win') || lower.contains('innwa') || lower.contains('mon')) {
+    if (lower.contains('win') || lower.contains('innwa') || lower.contains('mon') || lower.contains('zawgyi')) {
       return FontCategory.myanmarWin;
     }
     if (lower.contains('padauk') ||
         lower.contains('pyidaungsu') ||
         lower.contains('myanmar') ||
-        lower.contains('noto')) {
+        lower.contains('noto') ||
+        lower.contains('ayar') ||
+        lower.contains('masterpiece') ||
+        lower.contains('tharlon') ||
+        lower.contains('walone')) {
       return FontCategory.myanmarUnicode;
     }
     return FontCategory.english;

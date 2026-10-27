@@ -63,7 +63,50 @@ function doPost(e) {
       });
     }
 
-    // 3. Read Google Sheet Dataset
+    // 3. List Worksheets / Pages inside a Google Sheet
+    if (action === "list_sheets") {
+      const spreadsheetId = requestData.spreadsheet_id;
+      if (!spreadsheetId) {
+        return jsonResponse({ success: false, error: "Missing spreadsheet_id" });
+      }
+      const ss = SpreadsheetApp.openById(spreadsheetId);
+      const sheets = ss.getSheets().map(function(s) {
+        return {
+          name: s.getName(),
+          sheet_id: s.getSheetId(),
+          rows: s.getLastRow(),
+          cols: s.getLastColumn()
+        };
+      });
+      return jsonResponse({
+        success: true,
+        title: ss.getName(),
+        sheets: sheets
+      });
+    }
+
+    // 4. List Google Spreadsheets from Google Drive
+    if (action === "list_drive_spreadsheets") {
+      const query = requestData.query || "";
+      const files = DriveApp.getFilesByType(MimeType.GOOGLE_SHEETS);
+      const list = [];
+      let count = 0;
+      while (files.hasNext() && count < 50) {
+        const file = files.next();
+        if (!query || file.getName().toLowerCase().indexOf(query.toLowerCase()) !== -1) {
+          list.push({
+            id: file.getId(),
+            name: file.getName(),
+            url: file.getUrl(),
+            last_updated: file.getLastUpdated().toISOString()
+          });
+          count++;
+        }
+      }
+      return jsonResponse({ success: true, files: list });
+    }
+
+    // 5. Read Google Sheet Dataset
     if (action === "read_sheet") {
       const spreadsheetId = requestData.spreadsheet_id;
       const sheetName = requestData.sheet_name;

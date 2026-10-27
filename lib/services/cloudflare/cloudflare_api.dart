@@ -139,4 +139,39 @@ class CloudflareApi {
       throw Exception('Failed to deploy worker: ${response.statusCode} ${response.body}');
     }
   }
+
+  /// Fetch all active domains/zones in the user's Cloudflare account
+  Future<List<Map<String, dynamic>>> listDomains() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/zones?account.id=$accountId&status=active'),
+        headers: _headers,
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final result = data['result'] as List<dynamic>? ?? [];
+        return result.map((z) => {
+          'id': z['id'] as String,
+          'name': z['name'] as String,
+          'status': z['status'] as String,
+        }).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Get user's Cloudflare workers.dev subdomain
+  Future<String?> getWorkersSubdomain() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/accounts/$accountId/workers/subdomain'),
+        headers: _headers,
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['result']?['subdomain'] as String?;
+      }
+    } catch (_) {}
+    return null;
+  }
 }

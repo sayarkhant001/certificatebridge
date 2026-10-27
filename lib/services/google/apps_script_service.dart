@@ -87,6 +87,56 @@ class AppsScriptService {
     }
   }
 
+  /// List Google Spreadsheets from Google Drive
+  Future<List<Map<String, dynamic>>> listDriveSpreadsheets({String? query}) async {
+    final url = await _storage.getAppsScriptUrl();
+    if (url == null || url.isEmpty) {
+      throw Exception('Apps Script URL is not configured.');
+    }
+
+    final response = await _sendRequest(url, {
+      'action': 'list_drive_spreadsheets',
+      if (query != null && query.isNotEmpty) 'query': query,
+    });
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (data['success'] == true) {
+        final files = data['files'] as List<dynamic>? ?? [];
+        return files.map((f) => Map<String, dynamic>.from(f as Map)).toList();
+      } else {
+        throw Exception(data['error'] ?? 'Failed to list Google Drive spreadsheets.');
+      }
+    } else {
+      throw Exception('Apps Script returned status: ${response.statusCode}');
+    }
+  }
+
+  /// List all worksheets/pages (tabs) inside a Google Sheet
+  Future<List<Map<String, dynamic>>> listSpreadsheetTabs(String spreadsheetId) async {
+    final url = await _storage.getAppsScriptUrl();
+    if (url == null || url.isEmpty) {
+      throw Exception('Apps Script URL is not configured.');
+    }
+
+    final response = await _sendRequest(url, {
+      'action': 'list_sheets',
+      'spreadsheet_id': spreadsheetId,
+    });
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (data['success'] == true) {
+        final sheets = data['sheets'] as List<dynamic>? ?? [];
+        return sheets.map((s) => Map<String, dynamic>.from(s as Map)).toList();
+      } else {
+        throw Exception(data['error'] ?? 'Failed to list spreadsheet tabs.');
+      }
+    } else {
+      throw Exception('Apps Script returned status: ${response.statusCode}');
+    }
+  }
+
   /// Reads spreadsheet rows via Apps Script
   Future<List<Map<String, dynamic>>> readSheet({
     required String spreadsheetId,

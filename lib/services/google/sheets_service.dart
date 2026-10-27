@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../core/constants/app_constants.dart';
 import '../auth/google_auth_service.dart';
+import 'apps_script_service.dart';
 
 class SheetsService {
   final GoogleAuthService _authService = GoogleAuthService();
@@ -19,17 +20,79 @@ class SheetsService {
     return trimmed;
   }
 
-  /// Fetches sheet records from Google Sheets API
+  /// Lists all pages/worksheets (tabs) in a Google Sheet
+  Future<List<Map<String, dynamic>>> listSpreadsheetTabs(String spreadsheetId) async {
+    final cleanId = extractSpreadsheetId(spreadsheetId);
+    final token = await _authService.getValidAccessToken();
+
+    if (token != null) {
+      final uri = Uri.parse('$_baseUrl/$cleanId?fields=sheets.properties(sheetId,title,gridProperties)');
+      final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final sheetsList = data['sheets'] as List<dynamic>? ?? [];
+        return sheetsList.map((s) {
+          final props = s['properties'] as Map<String, dynamic>;
+          final grid = props['gridProperties'] as Map<String, dynamic>? ?? {};
+          return {
+            'name': props['title'] as String,
+            'sheet_id': props['sheetId'],
+            'rows': grid['rowCount'] ?? 0,
+            'cols': grid['columnCount'] ?? 0,
+          };
+        }).toList();
+      }
+    }
+
+    // Fallback to Apps Script
+    final appsScript = AppsScriptService();
+    return await appsScript.listSpreadsheetTabs(cleanId);
+  }
+
+  /// List user's Google Sheets from Google Drive
+  Future<List<Map<String, dynamic>>> listDriveSpreadsheets({String? query}) async {
+    final token = await _authService.getValidAccessToken();
+    if (token != null) {
+      final q = "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false" +
+          (query != null && query.isNotEmpty ? " and name contains '$query'" : "");
+      final uri = Uri.parse(
+        'https://www.googleapis.com/drive/v3/files?q=${Uri.encodeComponent(q)}&fields=files(id,name,webViewLink,modifiedTime)&pageSize=40',
+      );
+      final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final files = data['files'] as List<dynamic>? ?? [];
+        return files.map((f) => {
+          'id': f['id'] as String,
+          'name': f['name'] as String,
+          'url': f['webViewLink'] as String? ?? '',
+          'last_updated': f['modifiedTime'] as String? ?? '',
+        }).toList();
+      }
+    }
+
+    final appsScript = AppsScriptService();
+    return await appsScript.listDriveSpreadsheets(query: query);
+  }
+
+  /// Fetches sheet records from Google Sheets API or Apps Script with multi-page tab support
   Future<List<Map<String, dynamic>>> fetchSheetData({
     required String spreadsheetId,
+    String? sheetName,
     String range = 'A1:ZZ',
   }) async {
-    final token = await _authService.getValidAccessToken();
-    if (token == null) throw Exception('Google account is not authenticated.');
-
     final cleanId = extractSpreadsheetId(spreadsheetId);
-    final uri = Uri.parse('$_baseUrl/$cleanId/values/$range');
+    final targetRange = sheetName != null ? "'$sheetName'!$range" : range;
+    final token = await _authService.getValidAccessToken();
 
+    if (token == null) {
+      // Delegate to Google Apps Script
+      final appsScript = AppsScriptService();
+      return await appsScript.readSheet(spreadsheetId: cleanId, sheetName: sheetName);
+    }
+
+    final uri = Uri.parse('$_baseUrl/$cleanId/values/$targetRange');
     final response = await http.get(
       uri,
       headers: {'Authorization': 'Bearer $token'},

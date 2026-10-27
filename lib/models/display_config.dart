@@ -12,6 +12,14 @@ class DisplayConfig {
   final String emailSubjectTemplate;
   final String emailBodyTemplate;
 
+  final String? logoUrl;
+  final String badgeText;
+  final String headlineText;
+  final String footerText;
+  final String themePreset; // emerald, sapphire, gold, crimson, obsidian
+  final bool allowPrint;
+  final String? customSubdomain;
+
   DisplayConfig({
     required this.publicColumns,
     required this.emailColumns,
@@ -20,10 +28,17 @@ class DisplayConfig {
     this.institutionName = 'CertiBridge Academy',
     this.supportEmail = 'admin@school.edu',
     this.customDomain,
-    this.primaryColorHex = '#1E3A8A',
+    this.primaryColorHex = '#059669',
     this.emailSubjectTemplate = 'Official Certificate of Completion: {{Certificate_Code}}',
     this.emailBodyTemplate =
         'Dear {{Student_Name}},\n\nYour certificate for {{Course_Name}} has been officially issued.\nVerification Link: {{Verification_URL}}\n\nBest regards,\n{{Institution_Name}}',
+    this.logoUrl,
+    this.badgeText = 'Official Edge Verified',
+    this.headlineText = 'Permanent Cryptographic Record Verified',
+    this.footerText = 'Secured by CertiBridge Zero-Cost Local-First Architecture &bull; Powered by Cloudflare KV Edge',
+    this.themePreset = 'emerald',
+    this.allowPrint = true,
+    this.customSubdomain,
   });
 
   Map<String, dynamic> toMap() {
@@ -38,6 +53,13 @@ class DisplayConfig {
       'primary_color_hex': primaryColorHex,
       'email_subject_template': emailSubjectTemplate,
       'email_body_template': emailBodyTemplate,
+      'logo_url': logoUrl,
+      'badge_text': badgeText,
+      'headline_text': headlineText,
+      'footer_text': footerText,
+      'theme_preset': themePreset,
+      'allow_print': allowPrint,
+      'custom_subdomain': customSubdomain,
     };
   }
 
@@ -54,11 +76,18 @@ class DisplayConfig {
       institutionName: map['institution_name'] as String? ?? 'CertiBridge Academy',
       supportEmail: map['support_email'] as String? ?? 'admin@school.edu',
       customDomain: map['custom_domain'] as String?,
-      primaryColorHex: map['primary_color_hex'] as String? ?? '#1E3A8A',
+      primaryColorHex: map['primary_color_hex'] as String? ?? '#059669',
       emailSubjectTemplate: map['email_subject_template'] as String? ??
           'Official Certificate of Completion: {{Certificate_Code}}',
       emailBodyTemplate: map['email_body_template'] as String? ??
           'Dear {{Student_Name}},\n\nYour certificate has been issued.',
+      logoUrl: map['logo_url'] as String?,
+      badgeText: map['badge_text'] as String? ?? 'Official Edge Verified',
+      headlineText: map['headline_text'] as String? ?? 'Permanent Cryptographic Record Verified',
+      footerText: map['footer_text'] as String? ?? 'Secured by CertiBridge Zero-Cost Local-First Architecture &bull; Powered by Cloudflare KV Edge',
+      themePreset: map['theme_preset'] as String? ?? 'emerald',
+      allowPrint: map['allow_print'] as bool? ?? true,
+      customSubdomain: map['custom_subdomain'] as String?,
     );
   }
 
@@ -89,6 +118,13 @@ class DisplayConfig {
     String? primaryColorHex,
     String? emailSubjectTemplate,
     String? emailBodyTemplate,
+    String? logoUrl,
+    String? badgeText,
+    String? headlineText,
+    String? footerText,
+    String? themePreset,
+    bool? allowPrint,
+    String? customSubdomain,
   }) {
     return DisplayConfig(
       publicColumns: publicColumns ?? this.publicColumns,
@@ -101,6 +137,13 @@ class DisplayConfig {
       primaryColorHex: primaryColorHex ?? this.primaryColorHex,
       emailSubjectTemplate: emailSubjectTemplate ?? this.emailSubjectTemplate,
       emailBodyTemplate: emailBodyTemplate ?? this.emailBodyTemplate,
+      logoUrl: logoUrl ?? this.logoUrl,
+      badgeText: badgeText ?? this.badgeText,
+      headlineText: headlineText ?? this.headlineText,
+      footerText: footerText ?? this.footerText,
+      themePreset: themePreset ?? this.themePreset,
+      allowPrint: allowPrint ?? this.allowPrint,
+      customSubdomain: customSubdomain ?? this.customSubdomain,
     );
   }
 }
